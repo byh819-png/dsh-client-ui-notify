@@ -1,0 +1,8 @@
+# Build artifacts: tsc declaration output and the tsdown host/client bundles.
+lib/
+
+# Dependencies (workspace-linked by pnpm).
+node_modules/
+
+# TypeScript incremental build info.
+*.tsbuildinfo

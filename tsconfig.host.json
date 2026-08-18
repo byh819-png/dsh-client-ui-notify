@@ -1,0 +1,37 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "types": ["node"]
+  },
+  "include": [
+    "src/index.ts",
+    "src/audio-store.ts",
+    "src/invariant.ts",
+    "src/notify-settings.ts"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../connection/tsconfig.host.json"
+    }
+  ]
+}

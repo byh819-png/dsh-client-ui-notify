@@ -32,7 +32,7 @@ The General settings row adds the **Enable sound alerts** master switch, the two
 
 ## Installation
 
-**Quick start**: download the [installer (zip)](./release/dsh-client-ui-notify-0.1.0-rc.7.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
+**Quick start**: download the [installer (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.0-rc.7.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
 
 Manual installation:
 

@@ -31,7 +31,7 @@ Web 客户端的**铃声提醒插件**：当某个会话的回答完成、或某
 
 ## 安装方法
 
-**快速开始**：下载 [安装包 (zip)](./release/dsh-client-ui-notify-0.1.0-rc.7.zip)，解压后 Windows 运行 `install.ps1`、macOS/Linux 运行 `bash install.sh`，重启 `dsh web` 即可。
+**快速开始**：下载 [安装包 (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.0-rc.7.zip)，解压后 Windows 运行 `install.ps1`、macOS/Linux 运行 `bash install.sh`，重启 `dsh web` 即可。
 
 手动安装：
 

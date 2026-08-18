@@ -32,10 +32,9 @@ The General settings row adds the **Enable sound alerts** master switch, the two
 
 ## Installation
 
-**Quick start**: download `dsh-client-ui-notify-0.1.0-rc.7.zip` from this repository's `release/` directory, extract it, and run `install.ps1` on Windows to finish the install (it copies the plugin, writes the loader row, and prints the restart hint); or follow the manual copy below.
+**Quick start**: download the [installer (zip)](./release/dsh-client-ui-notify-0.1.0-rc.7.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
 
-The plugin is a plain npm package (host half `lib/index.js` plus browser half `lib/client.js`); installing it needs no git, npm registry, or pnpm.
-The `profiles/node_modules` directory under `$DSH_HOME` is the installation's module fallback, and every dependency this package needs (cordis, dsh-settings, the client runtime, …) is already in that closure, so a manual copy needs no dependency install.
+Manual installation:
 
 1. Copy the plugin directory (`package.json` + `lib/`) to `$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-client-ui-notify/` (`$DSH_HOME` defaults to `~/.dsh`).
 2. Append the loader row to `$DSH_HOME/profiles/web/cordis.patch.yml` (or the profile that serves the web UI):
@@ -50,10 +49,7 @@ The `profiles/node_modules` directory under `$DSH_HOME` is the installation's mo
 
 To uninstall: delete the copied directory and the `ui-notify` rows from `cordis.patch.yml`.
 
-Other installation methods:
-Run `dsh plugin --profile web add <path-to>.tgz` from a `pnpm pack` tarball (still requires the mount row, and its dependencies resolve from the registry);
-or, for a source checkout, copy the whole package into `packages/client/ui-notify` and rebuild (a bare `lib/` folder dropped into `packages/client/` is not a valid workspace member).
-Note that `$DSH_HOME/profiles/node_modules` is healed on boot into symlinks over the installation's dependency closure: a manually copied real directory is safe only while this package stays outside that closure — adding it to a shipped bundle later means removing the copy in favor of the closure link.
+> The plugin is a plain npm package; its runtime dependencies (cordis, dsh-settings, …) come from dsh's built-in closure, so no extra install is needed.
 
 ## Model Experience
 

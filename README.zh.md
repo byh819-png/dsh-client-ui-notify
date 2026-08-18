@@ -31,10 +31,9 @@ Web 客户端的**铃声提醒插件**：当某个会话的回答完成、或某
 
 ## 安装方法
 
-**快速开始**：从本仓库的 `release/` 目录下载 `dsh-client-ui-notify-0.1.0-rc.7.zip`，解压后在 Windows 上运行 `install.ps1` 即可完成安装（包含插件包、挂载行写入与重启提示）；或按下面的手动拷贝方式安装。
+**快速开始**：下载 [安装包 (zip)](./release/dsh-client-ui-notify-0.1.0-rc.7.zip)，解压后 Windows 运行 `install.ps1`、macOS/Linux 运行 `bash install.sh`，重启 `dsh web` 即可。
 
-本插件是普通 npm 包（Host `lib/index.js` + 浏览器`lib/client.js`），无需 git、npm registry 或 pnpm即可安装。
-`$DSH_HOME` 下的 `profiles/node_modules` 是安装的模块回退目录，本插件需要的全部依赖（cordis、dsh-settings、client runtime 等）都已在那个闭包里，因此手动拷贝即可使用，无需再装依赖。
+手动安装：
 
 1. 把插件目录（`package.json` + `lib/`）复制到 `$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-client-ui-notify/`（`$DSH_HOME` 默认 `~/.dsh`）。
 2. 在 `$DSH_HOME/profiles/web/cordis.patch.yml`（或负责提供 web UI 的 profile）追加挂载行：
@@ -49,11 +48,7 @@ Web 客户端的**铃声提醒插件**：当某个会话的回答完成、或某
 
 卸载方法：删除复制的目录与 `cordis.patch.yml` 里的 `ui-notify` 行。
 
-其他安装方法：
-用 `pnpm pack` 出的 tarball 执行 `dsh plugin --profile web add <路径>.tgz`（仍需挂载行，且其依赖要从 registry 解析）；
-或
-对源码 clone，把整个包放进 `packages/client/ui-notify` 后重新构建（只把 `lib/` 产物丢进 `packages/client/` 不是合法的 workspace 成员）。
-注意 `$DSH_HOME/profiles/node_modules` 每次启动会按安装依赖闭包愈合为符号链接：手工拷贝的真实目录只在包未进入该闭包时安全——将来若把它加进随附 bundle，需删除拷贝、改用闭包链接。
+> 插件是普通 npm 包，运行时依赖（cordis、dsh-settings 等）由 dsh 自带闭包提供，无需额外安装。
 
 ## 模型体验
 

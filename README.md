@@ -32,6 +32,8 @@ The General settings row adds the **Enable sound alerts** master switch, the two
 
 ## Installation
 
+**Quick start**: download `dsh-client-ui-notify-0.1.0-rc.7.zip` from this repository's `release/` directory, extract it, and run `install.ps1` on Windows to finish the install (it copies the plugin, writes the loader row, and prints the restart hint); or follow the manual copy below.
+
 The plugin is a plain npm package (host half `lib/index.js` plus browser half `lib/client.js`); installing it needs no git, npm registry, or pnpm.
 The `profiles/node_modules` directory under `$DSH_HOME` is the installation's module fallback, and every dependency this package needs (cordis, dsh-settings, the client runtime, …) is already in that closure, so a manual copy needs no dependency install.
 

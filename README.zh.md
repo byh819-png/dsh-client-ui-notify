@@ -31,6 +31,8 @@ Web 客户端的**铃声提醒插件**：当某个会话的回答完成、或某
 
 ## 安装方法
 
+**快速开始**：从本仓库的 `release/` 目录下载 `dsh-client-ui-notify-0.1.0-rc.7.zip`，解压后在 Windows 上运行 `install.ps1` 即可完成安装（包含插件包、挂载行写入与重启提示）；或按下面的手动拷贝方式安装。
+
 本插件是普通 npm 包（Host `lib/index.js` + 浏览器`lib/client.js`），无需 git、npm registry 或 pnpm即可安装。
 `$DSH_HOME` 下的 `profiles/node_modules` 是安装的模块回退目录，本插件需要的全部依赖（cordis、dsh-settings、client runtime 等）都已在那个闭包里，因此手动拷贝即可使用，无需再装依赖。
 

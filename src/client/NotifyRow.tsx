@@ -1,10 +1,11 @@
 /**
  * Notification preference row registered into the General section item slot:
- * the master switch, the two event switches, the method selector, and the
+ * the master switch, the system-notification switch (with its permission
+ * request), the two event switches, the sound-type selector, and the
  * method-specific inputs (TTS text / custom audio source + file picker), plus
  * a preview button that plays the current method immediately. Every control
- * writes one durable field through the injected `setField` face; the row never
- * touches the settings transport itself.
+ * writes one durable field through the injected `setField` face; the row
+ * never touches the settings transport itself.
  */
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
@@ -72,13 +73,47 @@ function Switch(props: {
 export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponentProps) {
   const config = useStore(s => s.config)
   const active = config.enabled
-  // One-shot feedback for the file picker: a message and whether it is an error.
+  // One-shot feedback for the file picker and the system-notification
+  // permission flow: a message and whether it is an error.
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
 
   /** Show a picker feedback message for a moment. */
   const flash = (text: string, error: boolean): void => {
     setNotice({ text, error })
     window.setTimeout(() => { setNotice(null) }, 4000)
+  }
+
+  /**
+   * Toggle the system-notification channel. Enabling requests the browser
+   * Notification permission first (the switch click is the required user
+   * gesture) and persists the field only when permission lands on granted;
+   * disabling never asks again.
+   */
+  const toggleSystem = (next: boolean): void => {
+    if (!next) {
+      setField(NOTIFY_FIELDS.systemNotify, false)
+      return
+    }
+    if (typeof Notification === 'undefined') {
+      flash(t('notify.system.unsupported'), true)
+      return
+    }
+    if (Notification.permission === 'denied') {
+      flash(t('notify.system.denied'), true)
+      return
+    }
+    if (Notification.permission === 'default') {
+      void Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+          setField(NOTIFY_FIELDS.systemNotify, true)
+          flash(t('notify.system.granted'), false)
+        } else {
+          flash(t('notify.system.denied'), true)
+        }
+      })
+      return
+    }
+    setField(NOTIFY_FIELDS.systemNotify, true)
   }
 
   /** Upload one picked audio file to the host route; the durable setting stores the served URL, never the bytes. */
@@ -121,7 +156,6 @@ export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponent
 
   return (
     <div className={css.group}>
-      <div className={css.title}>{t('notify.title')}</div>
       <Switch
         label={t('notify.enabled')}
         checked={config.enabled}
@@ -141,6 +175,12 @@ export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponent
           onChange={(next) => { setField(NOTIFY_FIELDS.onAuthRequired, next) }}
         />
       </div>
+      <Switch
+        label={t('notify.systemNotify')}
+        checked={config.systemNotify}
+        disabled={!active}
+        onChange={toggleSystem}
+      />
       <div className={css.optionRow}>
         <label className={css.fieldLabel} htmlFor="ui-notify-method">{t('notify.method')}</label>
         <select
@@ -195,11 +235,13 @@ export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponent
             </label>
           </div>
           <div className={css.hint}>{t('notify.customHint')}</div>
-          {notice !== null && (
-            <div className={notice.error ? css.noticeError : css.notice} role="status">
-              {notice.text}
-            </div>
-          )}
+        </div>
+      )}
+      {/* One-shot feedback for any control (file picker, system-notification
+          permission): a message and whether it is an error. */}
+      {notice !== null && (
+        <div className={notice.error ? css.noticeError : css.notice} role="status">
+          {notice.text}
         </div>
       )}
     </div>

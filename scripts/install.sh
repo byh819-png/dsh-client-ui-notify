@@ -52,7 +52,8 @@ if grep -q 'dsh-client-ui-notify' "$patch_file"; then
 else
   cat >> "$patch_file" <<'EOF'
 
-# Sound-alert plugin: rings on answer-complete and authorization-needed edges.
+# Notification plugin: rings and shows a popup on answer-complete and
+# authorization-needed edges; optional browser system notifications.
 - insert:
     - id: ui-notify
       name: '@deepseek-ai/dsh-client-ui-notify'
@@ -62,4 +63,4 @@ fi
 
 # 3) Done
 echo '[3/3] Installation complete. Restart the dsh web server, refresh the browser,'
-echo '      then open Settings > General to find the Sound alerts row.'
+echo '      then open Settings > General to configure the notifications.'

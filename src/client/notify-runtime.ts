@@ -17,6 +17,24 @@ export interface SessionObservation {
   pending: boolean
 }
 
+/** The two notification edges the runtime detects and reports. */
+export type AlertKind = 'answer-complete' | 'auth-required'
+
+/**
+ * One fired notification edge: emitted for every ring (the bottom-right popup
+ * follows the master switch and the event toggles, with no separate toggle);
+ * the `notify/system` event carries the same payload for the browser system
+ * notification.
+ */
+export interface NotifyAlert {
+  /** Which edge fired. */
+  kind: AlertKind
+  /** The session that crossed the edge. */
+  sessionId: SessionId
+  /** Human-facing label of that session (durable title, project basename, or id). */
+  title: string
+}
+
 /** One session summary projected to the two observed facts. */
 function observationOf(summary: SessionListState['byId'][SessionId]): SessionObservation {
   return {
@@ -28,6 +46,7 @@ function observationOf(summary: SessionListState['byId'][SessionId]): SessionObs
 /** Deep field comparison deciding whether a scope re-read changed anything. */
 function sameSection(left: NotifySettings, right: NotifySettings): boolean {
   return left.enabled === right.enabled
+    && left.systemNotify === right.systemNotify
     && left.onAnswerComplete === right.onAnswerComplete
     && left.onAuthRequired === right.onAuthRequired
     && left.method === right.method
@@ -42,7 +61,10 @@ function sameSection(left: NotifySettings, right: NotifySettings): boolean {
  * section so the settings row can mirror it. Session observation baselines on
  * the first list snapshot (a session already idle at load rings nothing) and
  * re-baselines on `connection/reset` (reconnect replays status frames, which
- * would otherwise fabricate false edges).
+ * would otherwise fabricate false edges). Every fired edge plays the sound and
+ * emits `notify/alert` (the bottom-right popup follows the master switch and
+ * the event toggles — no separate toggle); when the system toggle is on it
+ * also emits `notify/system` for the browser system notification.
  */
 export class NotifyRuntime {
   private config: NotifySettings = { ...DEFAULT_NOTIFY_SETTINGS }
@@ -116,11 +138,15 @@ export class NotifyRuntime {
   }
 
   /**
-   * Diff the latest list snapshot against the observation mirror and play for
-   * each enabled edge: running → idle rings "answer complete", absent →
-   * present pending interaction rings "authorization needed". The first
-   * snapshot only records (sessions already idle at load ring nothing); new
-   * sessions record without ringing; removed sessions drop.
+   * Diff the latest list snapshot against the observation mirror and fire for
+   * each enabled edge: running → idle fires "answer complete", absent →
+   * present pending interaction fires "authorization needed". Each fire plays
+   * the configured sound and emits `notify/alert` (the bottom-right popup
+   * follows the master switch and the event toggles, so it accompanies every
+   * ring); when the system toggle is on it also emits `notify/system` for the
+   * browser system notification. The first snapshot only records (sessions
+   * already idle at load fire nothing); new sessions record without firing;
+   * removed sessions drop.
    */
   private observe(): void {
     const snapshot = this.ctx.sessions.list.getSnapshot()
@@ -141,9 +167,17 @@ export class NotifyRuntime {
       }
       if (prev.running && !next.running && this.config.enabled && this.config.onAnswerComplete) {
         dispatch(this.config, this.engine)
+        this.ctx.emit('notify/alert', { kind: 'answer-complete', sessionId, title: summary.displayTitle })
+        if (this.config.systemNotify) {
+          this.ctx.emit('notify/system', { kind: 'answer-complete', sessionId, title: summary.displayTitle })
+        }
       }
       if (!prev.pending && next.pending && this.config.enabled && this.config.onAuthRequired) {
         dispatch(this.config, this.engine)
+        this.ctx.emit('notify/alert', { kind: 'auth-required', sessionId, title: summary.displayTitle })
+        if (this.config.systemNotify) {
+          this.ctx.emit('notify/system', { kind: 'auth-required', sessionId, title: summary.displayTitle })
+        }
       }
       this.observed.set(sessionId, next)
     }

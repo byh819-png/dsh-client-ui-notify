@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore, type SessionId, type SessionListState, type SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import { DEFAULT_NOTIFY_SETTINGS, type NotifySettings } from '../src/notify-settings.ts'
-import { NotifyRuntime } from '../src/client/notify-runtime.ts'
+import { NotifyRuntime, type NotifyAlert } from '../src/client/notify-runtime.ts'
 
 const SID = 'sess-1' as SessionId
 
@@ -87,6 +87,84 @@ describe('NotifyRuntime', () => {
     b.list.set(listState([summary({ running: true })]))
     b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
     expect(b.engine.playBuiltin).toHaveBeenCalledTimes(1)
+  })
+
+  it('emits notify/alert for every fired edge with the session label', () => {
+    const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true })
+    const alerts: NotifyAlert[] = []
+    b.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
+    b.list.set(listState([summary({ running: true })]))
+    b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
+    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    expect(alerts).toEqual([
+      { kind: 'answer-complete', sessionId: SID, title: 'sess-1' },
+      { kind: 'auth-required', sessionId: SID, title: 'sess-1' },
+    ])
+  })
+
+  it('emits no alert when the master switch or the event toggle gates the edge off', () => {
+    const gated = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, onAnswerComplete: false })
+    const alerts: NotifyAlert[] = []
+    gated.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
+    gated.list.set(listState([summary({ running: true })]))
+    gated.list.set(listState([summary({ running: false, updatedAt: 2 })]))
+    expect(alerts).toEqual([])
+
+    const disabled = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: false })
+    const disabledAlerts: NotifyAlert[] = []
+    disabled.ctx.on('notify/alert', (alert) => { disabledAlerts.push(alert) })
+    disabled.list.set(listState([summary()]))
+    disabled.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 2 })]))
+    expect(disabledAlerts).toEqual([])
+  })
+
+  it('keeps the popup accompanying every ring — the master switch alone gates it', () => {
+    const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true })
+    const alerts: NotifyAlert[] = []
+    b.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
+    b.list.set(listState([summary({ running: true })]))
+    b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
+    expect(b.engine.playBuiltin).toHaveBeenCalledTimes(1)
+    expect(alerts).toEqual([{ kind: 'answer-complete', sessionId: SID, title: 'sess-1' }])
+  })
+
+  it('emits notify/system only when the system toggle is on, on top of the popup event', () => {
+    const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, systemNotify: true })
+    const alerts: NotifyAlert[] = []
+    const systems: NotifyAlert[] = []
+    b.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
+    b.ctx.on('notify/system', (alert) => { systems.push(alert) })
+    b.list.set(listState([summary({ running: true })]))
+    b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
+    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    expect(alerts).toEqual([
+      { kind: 'answer-complete', sessionId: SID, title: 'sess-1' },
+      { kind: 'auth-required', sessionId: SID, title: 'sess-1' },
+    ])
+    expect(systems).toEqual([
+      { kind: 'answer-complete', sessionId: SID, title: 'sess-1' },
+      { kind: 'auth-required', sessionId: SID, title: 'sess-1' },
+    ])
+  })
+
+  it('emits no notify/system while the system toggle is off', () => {
+    const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true })
+    const systems: NotifyAlert[] = []
+    b.ctx.on('notify/system', (alert) => { systems.push(alert) })
+    b.list.set(listState([summary()]))
+    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 2 })]))
+    expect(systems).toEqual([])
+  })
+
+  it('re-baselines alert emission on connection/reset (reconnect replay emits nothing)', () => {
+    const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true })
+    const alerts: NotifyAlert[] = []
+    b.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
+    b.list.set(listState([summary({ running: true })]))
+    b.ctx.emit('connection/reset')
+    b.list.set(listState([summary({ running: true, updatedAt: 2 })]))
+    b.list.set(listState([summary({ running: false, updatedAt: 3 })]))
+    expect(alerts).toEqual([{ kind: 'answer-complete', sessionId: SID, title: 'sess-1' }])
   })
 
   it('rings on the pending-appears edge with the custom method and its URL', () => {

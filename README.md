@@ -2,8 +2,8 @@
 
 English | [中文](README.zh.md)
 
-**Sound-alert plugin** for the web client: rings when a session's answer completes and when a session needs authorization, so a background conversation cannot finish unnoticed.
-The browser half provides `ctx.notify` (a `NotifyRuntime`) and registers a preference row into the settings **General** section; the Host half exposes the durable `ui-notify` settings namespace the row reads and writes through `ctx.settingsScope`, stored in the user-settings document (`$DSH_HOME/settings.yaml` by default).
+**Sound-alert plugin** for the web client: rings, shows a bottom-right popup, and can send a browser system notification when a session's answer completes and when a session needs authorization, so a background conversation cannot finish unnoticed.
+The browser half provides `ctx.notify` (a `NotifyRuntime`), registers a preference row into the settings **General** section, and registers the popup into the shell's floating overlay seat; the Host half exposes the durable `ui-notify` settings namespace the row reads and writes through `ctx.settingsScope`, stored in the user-settings document (`$DSH_HOME/settings.yaml` by default).
 
 ## Alert events
 
@@ -13,6 +13,10 @@ The runtime observes `ctx.sessions.list` and rings in two situations, both gated
 - **Authorization needed** — a session's `pendingInteraction` appears (approval, plan review, or ask-user question).
 
 The first list snapshot only records observed state (a session already idle at load rings nothing), and `connection/reset` re-baselines so reconnect status replay cannot ring.
+
+## Popup notification
+
+With the **System notification** toggle on, every ring also sends a browser **Notification API** notification (title = the edge, body = the session label), visible even while the tab is in the background — unlike the in-page popup. Enabling the toggle requests the browser's Notification permission (the switch click is the user gesture); permission must be granted for notifications to fire, and denied or unsupported browsers refuse the toggle with an inline message. The sender degrades to a no-op without granted permission, so it never throws from an event handler.
 
 ## Alert methods
 
@@ -24,15 +28,15 @@ Common audio formats are supported (wav, mp3, ogg, mp4, m4a, webm, aac, flac, ai
 
 Playback degrades to a no-op when the platform capability is absent, so a misconfigured alert never throws from an event handler. The row's **Preview** button plays the current method immediately.
 
-## Settings surface
+## Settings Window
 
-![Sound alerts row in General settings](./images/screenshot.png)
+![Notification settings in General settings](./images/screenshot.png)
 
-The General settings row adds the **Enable sound alerts** master switch, the two event switches (**alert when an answer completes** / **alert when authorization is needed**), the **Alert method** selector, the method-specific **input** fields, and the **Preview** button. Every control writes exactly one field through the injected `setField` face; the row never touches the settings transport itself. The Host half registers the namespace only when the settings provider is composed, so a deployment without one shows no row and no namespace.
+The General settings row adds the **Enable alerts** master switch, the **System notification** switch, the two event switches (**alert when an answer completes** / **alert when authorization is needed**), the **Sound type** selector, the method-specific **input** fields, and the **Preview** button. Every control writes exactly one field through the injected `setField` face; the row never touches the settings transport itself. The Host half registers the namespace only when the settings provider is composed, so a deployment without one shows no row and no namespace.
 
 ## Installation
 
-**Quick start**: download the [installer (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.0-rc.7.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
+**Quick start**: download the [installer (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.1-rc.2.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
 
 Manual installation:
 
@@ -45,7 +49,7 @@ Manual installation:
          name: '@deepseek-ai/dsh-client-ui-notify'
    ```
 
-3. Restart `dsh web` and refresh the browser; the **Sound alerts** row appears under Settings → General.
+3. Restart `dsh web` and refresh the browser; the notification settings (**Enable alerts**, **System notification**, and the two event toggles) appear under Settings → General.
 
 To uninstall: delete the copied directory and the `ui-notify` rows from `cordis.patch.yml`.
 

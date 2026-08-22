@@ -1,25 +1,31 @@
 /**
  * Notification plugin, browser half: provides the notification runtime (sound
- * playback on answer-complete and authorization-needed edges) and registers
- * its preference row into the settings General section — the feature owns its
- * own settings surface. The Host half (`src/index.ts`) exposes the durable
- * `ui-notify` namespace this row reads and writes.
+ * playback on answer-complete and authorization-needed edges), a bottom-right
+ * popup and a browser system notification that accompany every fired edge, and
+ * registers its preference row into the settings General section — the feature
+ * owns its own settings and overlay surfaces. The Host half (`src/index.ts`)
+ * exposes the durable `ui-notify` namespace this row reads and writes.
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Type-only: pulls the shell.overlay SlotMap declaration from the layout plugin.
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the runtime plugin's Context merge (ctx.sessions).
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import { NOTIFY_SETTINGS_NAMESPACE, type NotifySettings } from '../notify-settings.ts'
 import { en, zh, type NotifyKey } from './locales.ts'
-import { NotifyRuntime } from './notify-runtime.ts'
+import { NotifyRuntime, type NotifyAlert } from './notify-runtime.ts'
 import { createNotifyRowStore } from './settings-store.ts'
 import { createBrowserEngine } from './sounds.ts'
+import { showSystemNotification } from './system-notify.ts'
 import { NotifyRow, type NotifyRowInjected } from './NotifyRow.tsx'
+import { createNotifyToastStore } from './toast-store.ts'
+import { NotifyToast } from './NotifyToast.tsx'
 
 export type { NotifyRowComponentProps, NotifyRowInjected } from './NotifyRow.tsx'
 export type { NotifyRowState } from './settings-store.ts'
@@ -29,10 +35,13 @@ export {
   AUDIO_EXTENSION_MEDIA_TYPES, AUDIO_ID_PATTERN, AUDIO_URL_PREFIX, MAX_AUDIO_BYTES,
   audioExtensionOfMediaType, audioMediaTypeOfExtension,
 } from '../notify-settings.ts'
-export { NotifyRuntime, type SessionObservation } from './notify-runtime.ts'
+export { NotifyRuntime, type AlertKind, type NotifyAlert, type SessionObservation } from './notify-runtime.ts'
 export { createBrowserEngine, dispatch, type PlaybackEngine } from './sounds.ts'
 export { createNotifyRowStore } from './settings-store.ts'
+export { SYSTEM_NOTIFICATION_TAG, showSystemNotification } from './system-notify.ts'
 export { NotifyRow } from './NotifyRow.tsx'
+export { createNotifyToastStore, type NotifyToastItem, type NotifyToastState } from './toast-store.ts'
+export { NotifyToast, type NotifyToastComponentProps } from './NotifyToast.tsx'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.notify'
@@ -56,6 +65,23 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'notify/config'(config: NotifySettings): void
+    /**
+     * One notification edge fired (answer complete or authorization needed).
+     * Emitted for every ring: the bottom-right popup follows the master
+     * switch and the event toggles, with no separate toggle.
+     * @param alert - the fired edge.
+     * @mode emit
+     */
+    'notify/alert'(alert: NotifyAlert): void
+    /**
+     * One notification edge fired while the system-notification toggle is on
+     * (answer complete or authorization needed). Emitted alongside the sound,
+     * so the system notification shares the master switch and the event
+     * toggles with the ringtone while keeping its own enable.
+     * @param alert - the fired edge.
+     * @mode emit
+     */
+    'notify/system'(alert: NotifyAlert): void
   }
 }
 
@@ -67,8 +93,10 @@ declare module '@deepseek-ai/cordis' {
 export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions']
 
 /**
- * Client plugin body: provide the notification runtime and register the
- * feature-owned preference row into the General section's item slot.
+ * Client plugin body: provide the notification runtime, register the
+ * feature-owned preference row into the General section's item slot, register
+ * the bottom-right popup into the shell's floating overlay seat, and send
+ * browser system notifications for the system channel.
  * @param ctx - client cordis context.
  */
 export function apply(ctx: ClientContext): void {
@@ -77,6 +105,7 @@ export function apply(ctx: ClientContext): void {
   ctx.provide('notify', notify)
 
   ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-notify: settings row dictionaries')
+  const systemCopy = ctx.locale.bind(SETTINGS_NS)
 
   const store = createNotifyRowStore()
   let bound: BoundActions<typeof store> | undefined
@@ -102,4 +131,35 @@ export function apply(ctx: ClientContext): void {
     locale: SETTINGS_NS,
     inject: injected,
   }, NotifyRow))
+
+  // Bottom-right popup in the shell's floating overlay seat: the alert
+  // listener replaces the current toast (the newest alert wins); the popup
+  // dismisses itself after its hold or on user close.
+  const toastStore = createNotifyToastStore()
+  let toastBound: BoundActions<typeof toastStore> | undefined
+  let toastSeq = 0
+  ctx.on('notify/alert', (alert) => {
+    toastSeq += 1
+    toastBound?.show({ ...alert, seq: toastSeq })
+  })
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'notify',
+    order: 30,
+    store: toastStore,
+    locale: SETTINGS_NS,
+    inject: (actions: BoundActions<typeof toastStore>) => {
+      toastBound = actions
+      return {}
+    },
+  }, NotifyToast))
+
+  // Browser system notification channel: the sender no-ops unless the
+  // platform exposes Notification with granted permission.
+  ctx.on('notify/system', (alert) => {
+    const title = alert.kind === 'answer-complete'
+      ? systemCopy('notify.system.answerComplete')
+      : systemCopy('notify.system.authRequired')
+    showSystemNotification(title, alert.title)
+  })
 }

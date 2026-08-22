@@ -76,8 +76,10 @@ export function audioMediaTypeOfExtension(extension: string): string | undefined
 
 /** Field names of the durable section (the row writes one field per control). */
 export const NOTIFY_FIELDS = {
-  /** Master switch: whether sound notifications are enabled at all. */
+  /** Master switch: whether notifications are enabled at all. */
   enabled: 'enabled',
+  /** Whether a browser system notification accompanies the sound. */
+  systemNotify: 'systemNotify',
   /** Ring when a session's answer finishes (running → idle edge). */
   onAnswerComplete: 'onAnswerComplete',
   /** Ring when a session needs authorization (approval/question pending). */
@@ -93,6 +95,7 @@ export const NOTIFY_FIELDS = {
 /** Durable notification section shared by the Host schema and the browser scope. */
 export interface NotifySettings {
   enabled: boolean
+  systemNotify: boolean
   onAnswerComplete: boolean
   onAuthRequired: boolean
   method: NotifyMethod
@@ -103,6 +106,7 @@ export interface NotifySettings {
 /** Default section when the user-settings document has no override. */
 export const DEFAULT_NOTIFY_SETTINGS: NotifySettings = {
   enabled: false,
+  systemNotify: false,
   onAnswerComplete: true,
   onAuthRequired: true,
   method: 'builtin',
@@ -113,6 +117,7 @@ export const DEFAULT_NOTIFY_SETTINGS: NotifySettings = {
 /** Durable notification schema; also the wire envelope the browser scope validates against. */
 export const NotifySettingsSchema: z<NotifySettings> = z.object({
   [NOTIFY_FIELDS.enabled]: z.boolean().default(DEFAULT_NOTIFY_SETTINGS.enabled),
+  [NOTIFY_FIELDS.systemNotify]: z.boolean().default(DEFAULT_NOTIFY_SETTINGS.systemNotify),
   [NOTIFY_FIELDS.onAnswerComplete]: z.boolean().default(DEFAULT_NOTIFY_SETTINGS.onAnswerComplete),
   [NOTIFY_FIELDS.onAuthRequired]: z.boolean().default(DEFAULT_NOTIFY_SETTINGS.onAuthRequired),
   [NOTIFY_FIELDS.method]: z.union([...NOTIFY_METHODS]).default(DEFAULT_NOTIFY_SETTINGS.method),

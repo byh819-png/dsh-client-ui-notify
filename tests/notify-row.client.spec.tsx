@@ -13,11 +13,16 @@ import { createNotifyRowStore } from '../src/client/settings-store.ts'
 afterEach(cleanup)
 
 const COPY: Record<string, string> = {
-  'notify.title': 'Sound alerts',
-  'notify.enabled': 'Enable sound alerts',
+  'notify.enabled': 'Enable alerts',
+  'notify.systemNotify': 'System notification',
+  'notify.system.answerComplete': 'Answer complete',
+  'notify.system.authRequired': 'Authorization needed',
+  'notify.system.granted': 'System notifications enabled',
+  'notify.system.denied': 'System notification permission denied',
+  'notify.system.unsupported': 'This browser does not support system notifications',
   'notify.onAnswerComplete': 'Alert when an answer completes',
   'notify.onAuthRequired': 'Alert when authorization is needed',
-  'notify.method': 'Alert method',
+  'notify.method': 'Sound type',
   'notify.method.builtin': 'Built-in ringtone',
   'notify.method.tts': 'Text to speech',
   'notify.method.custom': 'Custom audio',
@@ -27,6 +32,9 @@ const COPY: Record<string, string> = {
   'notify.customHint': 'An http(s) link, or a local audio file (≤ 1MB)',
   'notify.pickFile': 'Choose file',
   'notify.preview': 'Preview',
+  'notify.toast.answerComplete': 'Answer complete: {title}',
+  'notify.toast.authRequired': 'Authorization needed: {title}',
+  'notify.toast.close': 'Dismiss',
   'notify.uploaded': 'Audio saved',
   'notify.fileTooLarge': 'The audio file must be 1MB or smaller',
   'notify.fileTypeUnsupported': 'Unsupported audio format',
@@ -69,22 +77,24 @@ const switchOf = (name: RegExp): HTMLButtonElement =>
   screen.getByRole('switch', { name })
 
 describe('NotifyRow', () => {
-  it('renders the title, the master switch, and the two event switches', () => {
+  it('renders the master switch, the event switches, and the system switch', () => {
     mount()
-    expect(screen.getByText('Sound alerts')).toBeDefined()
-    expect(switchOf(/Enable sound alerts/).getAttribute('aria-checked')).toBe('false')
+    expect(screen.queryByText('Sound alerts')).toBeNull()
+    expect(screen.queryByText('Show popup')).toBeNull()
+    expect(switchOf(/Enable alerts/).getAttribute('aria-checked')).toBe('false')
     expect(switchOf(/Alert when an answer completes/).getAttribute('aria-checked')).toBe('true')
     expect(switchOf(/Alert when authorization is needed/).getAttribute('aria-checked')).toBe('true')
+    expect(switchOf(/System notification/).getAttribute('aria-checked')).toBe('false')
   })
 
   it('routes switch clicks through setField and mirrors store syncs', () => {
     const b = mount()
-    fireEvent.click(switchOf(/Enable sound alerts/))
+    fireEvent.click(switchOf(/Enable alerts/))
     expect(b.setField).toHaveBeenCalledWith('enabled', true)
     // No store write yet: the switch stays off until the mirror lands.
-    expect(switchOf(/Enable sound alerts/).getAttribute('aria-checked')).toBe('false')
+    expect(switchOf(/Enable alerts/).getAttribute('aria-checked')).toBe('false')
     act(() => { b.store.actions.sync({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true }, 1) })
-    expect(switchOf(/Enable sound alerts/).getAttribute('aria-checked')).toBe('true')
+    expect(switchOf(/Enable alerts/).getAttribute('aria-checked')).toBe('true')
 
     fireEvent.click(switchOf(/Alert when an answer completes/))
     expect(b.setField).toHaveBeenCalledWith('onAnswerComplete', false)
@@ -95,13 +105,70 @@ describe('NotifyRow', () => {
   it('ignores stale mirror syncs', () => {
     const b = mount()
     act(() => { b.store.actions.sync({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true }, 0) })
-    expect(switchOf(/Enable sound alerts/).getAttribute('aria-checked')).toBe('false')
+    expect(switchOf(/Enable alerts/).getAttribute('aria-checked')).toBe('false')
   })
 
-  it('disables the event switches and selector while the master switch is off', () => {
+  it('enables the system switch only when permission is already granted', () => {
+    const b = mount({ enabled: true })
+    const NotificationMock = vi.fn()
+    NotificationMock.permission = 'granted'
+    vi.stubGlobal('Notification', NotificationMock)
+    try {
+      fireEvent.click(switchOf(/System notification/))
+      expect(b.setField).toHaveBeenCalledWith('systemNotify', true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('requests permission on the switch click and persists only when granted', async () => {
+    const b = mount({ enabled: true })
+    const NotificationMock = vi.fn()
+    NotificationMock.permission = 'default'
+    NotificationMock.requestPermission = vi.fn(() => Promise.resolve('granted' as NotificationPermission))
+    vi.stubGlobal('Notification', NotificationMock)
+    try {
+      fireEvent.click(switchOf(/System notification/))
+      expect(NotificationMock.requestPermission).toHaveBeenCalledTimes(1)
+      await act(async () => { await Promise.resolve() })
+      expect(b.setField).toHaveBeenCalledWith('systemNotify', true)
+      expect(screen.getByText('System notifications enabled')).toBeDefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('refuses to persist when permission is denied', () => {
+    const b = mount({ enabled: true })
+    const deniedMock = vi.fn()
+    deniedMock.permission = 'denied'
+    vi.stubGlobal('Notification', deniedMock)
+    try {
+      fireEvent.click(switchOf(/System notification/))
+      expect(b.setField).not.toHaveBeenCalled()
+      expect(screen.getByText('System notification permission denied')).toBeDefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('refuses to persist when the browser lacks Notification support', () => {
+    const b = mount({ enabled: true })
+    vi.stubGlobal('Notification', undefined)
+    try {
+      fireEvent.click(switchOf(/System notification/))
+      expect(b.setField).not.toHaveBeenCalled()
+      expect(screen.getByText('This browser does not support system notifications')).toBeDefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('disables the event switches, the system switch, and the selector while the master switch is off', () => {
     mount({ enabled: false })
     expect(switchOf(/Alert when an answer completes/).disabled).toBe(true)
     expect(switchOf(/Alert when authorization is needed/).disabled).toBe(true)
+    expect(switchOf(/System notification/).disabled).toBe(true)
     expect(screen.getByRole<HTMLSelectElement>('combobox').disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Preview' }).disabled).toBe(true)
   })

@@ -5,7 +5,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore, type SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SessionId, type SessionListState, type SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -14,6 +14,9 @@ import type { NotifyRowInjected } from '@deepseek-ai/dsh-client-ui-notify/client
 import { DEFAULT_NOTIFY_SETTINGS, NOTIFY_SETTINGS_NAMESPACE, NotifySettingsSchema } from '../src/notify-settings.ts'
 import { NotifyRow } from '../src/client/NotifyRow.tsx'
 import type { createNotifyRowStore } from '../src/client/settings-store.ts'
+import { NotifyToast } from '../src/client/NotifyToast.tsx'
+import type { createNotifyToastStore } from '../src/client/toast-store.ts'
+import { SYSTEM_NOTIFICATION_TAG } from '../src/client/system-notify.ts'
 
 // The row's copy rides the browser locale; these specs assert the shipped
 // Chinese copy, so they state the browser they assume.
@@ -68,10 +71,17 @@ async function bench(isLoopback = true) {
   }
 }
 
-/** Stand in for the settings shell: declare the General item slot from root. */
+/** Stand in for the shell: declare the General item slot and the floating
+ * overlay seat from root. */
 function declareItems(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { [SLOT]: { kind: 'list', scope: 'root' } } } as never,
+    {
+      name: 'root',
+      children: {
+        [SLOT]: { kind: 'list', scope: 'root' },
+        'shell.overlay': { kind: 'list', scope: 'root' },
+      },
+    } as never,
     () => null,
   )
 }
@@ -86,6 +96,40 @@ function faceOf(slots: SlotRegistry) {
   return { entry, instance, face }
 }
 
+/** Same choreography for the popup entry registered into shell.overlay. */
+function toastFaceOf(slots: SlotRegistry) {
+  const entry = slots.entries('shell.overlay').find(e => e.component === NotifyToast)!
+  const handle = entry.store as ReturnType<typeof createNotifyToastStore>
+  const instance = handle.create()
+  const face = (entry.inject as unknown as (a: typeof instance.actions) => Record<string, never>)(instance.actions)
+  return { entry, instance, face }
+}
+
+function summary(patch: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id: 'sess-1' as SessionId,
+    displayTitle: 'sess-1',
+    running: false,
+    blank: false,
+    updatedAt: 1,
+    ...patch,
+  }
+}
+
+function listState(summaries: SessionSummary[]): SessionListState {
+  const byId: Record<SessionId, SessionSummary> = {}
+  for (const s of summaries) byId[s.id] = s
+  return {
+    ids: summaries.map(s => s.id),
+    byId,
+    current: undefined,
+    phase: 'ready',
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  }
+}
+
 describe('ui-notify apply', () => {
   it('declares the slot and locale services', () => {
     expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions'])
@@ -95,9 +139,9 @@ describe('ui-notify apply', () => {
     const before = await bench()
     declareItems(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(before.locale.bind(SETTINGS_NS)('notify.title')).toBe('声音提醒')
+    expect(before.locale.bind(SETTINGS_NS)('notify.enabled')).toBe('启用提醒')
     before.locale.setLocale('en')
-    expect(before.locale.bind(SETTINGS_NS)('notify.title')).toBe('Sound alerts')
+    expect(before.locale.bind(SETTINGS_NS)('notify.enabled')).toBe('Enable alerts')
     const entry = before.slots.entries(SLOT).find(e => e.component === NotifyRow)!
     expect(entry.options).toMatchObject({ id: 'notify', order: 20 })
     expect(entry.locale).toBe(SETTINGS_NS)
@@ -133,6 +177,48 @@ describe('ui-notify apply', () => {
     })
     // The row's copy rides the standard locale seat.
     expect(b.slots.entries(SLOT).find(e => e.component === NotifyRow)!.locale).toBe(SETTINGS_NS)
+  })
+
+  it('registers the popup into shell.overlay and routes fired edges into its store', async () => {
+    const b = await bench()
+    b.setHostSection({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true })
+    declareItems(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const { entry, instance } = toastFaceOf(b.slots)
+    expect(entry.options).toMatchObject({ id: 'notify', order: 30 })
+    expect(entry.locale).toBe(SETTINGS_NS)
+    expect(instance.getSnapshot().toast).toBeNull()
+
+    // An answer-complete edge: the sound plays (browser engine no-ops under
+    // this environment) and the popup store shows the alert.
+    b.sessionsList.set(listState([summary({ running: true })]))
+    b.sessionsList.set(listState([summary({ running: false, updatedAt: 2 })]))
+    expect(instance.getSnapshot().toast).toEqual({
+      seq: 1, kind: 'answer-complete', sessionId: 'sess-1', title: 'sess-1',
+    })
+
+    // An authorization-needed edge replaces the toast (newest wins).
+    b.sessionsList.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    expect(instance.getSnapshot().toast).toEqual({
+      seq: 2, kind: 'auth-required', sessionId: 'sess-1', title: 'sess-1',
+    })
+  })
+
+  it('sends a browser system notification on edges when the system toggle is on', async () => {
+    const b = await bench()
+    b.setHostSection({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, systemNotify: true })
+    declareItems(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const NotificationMock = vi.fn()
+    NotificationMock.permission = 'granted'
+    vi.stubGlobal('Notification', NotificationMock)
+    try {
+      b.sessionsList.set(listState([summary({ running: true })]))
+      b.sessionsList.set(listState([summary({ running: false, updatedAt: 2 })]))
+      expect(NotificationMock).toHaveBeenCalledWith('回答已完成', { body: 'sess-1', tag: SYSTEM_NOTIFICATION_TAG })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('refreshes its namespace on invalidation and keeps remote browsers process-local', async () => {
@@ -190,21 +276,24 @@ describe('ui-notify apply', () => {
     expect(b.slots.entries(SLOT).some(e => e.component === NotifyRow)).toBe(true)
   })
 
-  it('teardown removes the row and the dictionaries; teardown without a declaration is quiet', async () => {
+  it('teardown removes the row, the popup, and the dictionaries; teardown without a declaration is quiet', async () => {
     const b = await bench()
     declareItems(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries(SLOT)).toHaveLength(1)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(1)
     await fiber.dispose()
     expect(b.slots.entries(SLOT)).toHaveLength(0)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(0)
     // Dictionary disposal: translation falls back to the bare key.
-    expect(b.locale.bind(SETTINGS_NS)('notify.title')).toBe('notify.title')
+    expect(b.locale.bind(SETTINGS_NS)('notify.enabled')).toBe('notify.enabled')
 
     const quiet = await bench()
     const f2 = quiet.ctx.plugin({ inject: [...inject], apply })
     await f2.await()
     await f2.dispose()
     expect(quiet.slots.entries(SLOT)).toHaveLength(0)
+    expect(quiet.slots.entries('shell.overlay')).toHaveLength(0)
   })
 })

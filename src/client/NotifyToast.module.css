@@ -1,0 +1,90 @@
+/* Bottom-right notification popup: floating card over the whole app, accent
+ * bar color-coded by alert kind, slide-in, then hold-and-fade. The fade
+ * delay/duration MUST agree with HOLD_MS/FADE_MS in NotifyToast.tsx: the view
+ * unmounts at their sum, so a mismatched sheet either cuts the fade or leaves
+ * an invisible card behind. The card is click-through (an announcement must
+ * never block the app underneath); only the close button accepts the pointer. */
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  /* Above the image lightbox backdrop (1000) and the shell overlay layer (20):
+     the popup must stay readable over any surface. */
+  z-index: 1200;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(380px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  box-shadow: var(--dsw-shadow-lv3);
+  /* Accent bar: the alert kind's color, drawn along the leading edge. */
+  border-left: 3px solid var(--dsw-alias-state-success-primary);
+  animation:
+    dsh-notify-toast-in 200ms ease-out,
+    dsh-notify-toast-fade 400ms ease 4000ms forwards;
+}
+
+.toast[data-kind='auth-required'] {
+  border-left-color: var(--dsw-alias-state-warn-primary);
+}
+
+.text {
+  min-width: 0;
+}
+
+.close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+@keyframes dsh-notify-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes dsh-notify-toast-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion drops the slide-in; the delayed fade (an opacity change,
+   not movement) still ends the card before the timed unmount. */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: dsh-notify-toast-fade 400ms ease 4000ms forwards;
+  }
+}

@@ -32,6 +32,9 @@
       "path": "../ui-slots"
     },
     {
+      "path": "../ui-layout"
+    },
+    {
       "path": "../ui-settings"
     }
   ]

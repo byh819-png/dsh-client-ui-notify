@@ -28,6 +28,8 @@ Common audio formats are supported (wav, mp3, ogg, mp4, m4a, webm, aac, flac, ai
 
 Playback degrades to a no-op when the platform capability is absent, so a misconfigured alert never throws from an event handler. The row's **Preview** button plays the current method immediately.
 
+On every host activation, a retention sweep removes stored audio files the current setting no longer references (a hand-edited `customAudioUrl`, an upload whose settings write never landed, or a failed eager cleanup) — only files matching the canonical `<uuid>.<ext>` id pattern are ever touched.
+
 ## Settings Window
 
 ![Notification settings in General settings](./images/screenshot.png)
@@ -66,6 +68,5 @@ None; this package neither assembles nor sends a provider request.
 ## Known Limitations and Deferred Work
 
 - **User-audio route is loopback-only** — a LAN deployment that serves the browser through `trustedHosts` gets 403 on uploads/downloads (playback of http(s)/data URLs is unaffected); wiring the route into the trusted-host list is deferred.
-- **Orphaned hosted files** — replacing a file deletes the previous one from the row, but a setting edited by hand (or an upload that never reached the row) can leave a file under `$DSH_HOME/storages/ui-notify/audio/`; no retention sweep exists yet.
 - **TTS voices follow the browser** — no voice/rate/pitch controls exist; the text field is the only TTS input.
 - **One text for both events** — the TTS method speaks the same text whether an answer completed or authorization is needed.

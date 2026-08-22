@@ -1,15 +1,17 @@
 /** Host-side user-audio route: trust fence, id/extension parsing, GET/PUT/DELETE
- * against `$DSH_HOME/storages`, size/type guards, and route registration. */
-import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync } from 'node:fs'
+ * against `$DSH_HOME/storages`, size/type guards, route registration, and the
+ * orphaned-file retention sweep. */
+import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   apply, audioExtensionOfMediaType, audioMediaTypeOfExtension, audioStorageDir,
   AUDIO_URL_PREFIX, DEFAULT_NOTIFY_SETTINGS, handleAudioRequest, NOTIFY_SETTINGS_NAMESPACE,
+  sweepOrphanedAudio,
 } from '@deepseek-ai/dsh-client-ui-notify'
 
 class MemorySettings extends SettingsProvider {
@@ -246,5 +248,84 @@ describe('audio route', () => {
     expect(ctx.settings.get(settingsNamespace(NOTIFY_SETTINGS_NAMESPACE))).toEqual(DEFAULT_NOTIFY_SETTINGS)
     await fiber.dispose()
     expect(registered).toHaveLength(1)
+  })
+})
+
+describe('audio retention sweep', () => {
+  it('keeps the file the setting references and removes the rest', async () => {
+    withTempHome()
+    const dir = audioStorageDir()
+    mkdirSync(dir, { recursive: true })
+    const kept = `${UUID}.wav`
+    const orphan = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.ogg'
+    writeFileSync(join(dir, kept), 'keep')
+    writeFileSync(join(dir, orphan), 'drop')
+    expect(await sweepOrphanedAudio(`${AUDIO_URL_PREFIX}/${kept}`)).toBe(1)
+    expect(existsSync(join(dir, kept))).toBe(true)
+    expect(existsSync(join(dir, orphan))).toBe(false)
+  })
+
+  it('removes every hosted file when the setting holds no hosted reference', async () => {
+    withTempHome()
+    const dir = audioStorageDir()
+    mkdirSync(dir, { recursive: true })
+    const a = join(dir, `${UUID}.wav`)
+    const b = join(dir, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.mp3')
+    for (const referenced of ['', 'https://example.com/ring.wav'] as const) {
+      writeFileSync(a, 'a')
+      writeFileSync(b, 'b')
+      expect(await sweepOrphanedAudio(referenced)).toBe(2)
+      expect(readdirSync(dir)).toEqual([])
+    }
+    writeFileSync(a, 'a')
+    expect(await sweepOrphanedAudio(undefined)).toBe(1)
+  })
+
+  it('never touches files that do not match the canonical audio id pattern', async () => {
+    withTempHome()
+    const dir = audioStorageDir()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'notes.txt'), 'keep')
+    writeFileSync(join(dir, 'ring.wav'), 'keep')
+    expect(await sweepOrphanedAudio(undefined)).toBe(0)
+    expect(existsSync(join(dir, 'notes.txt'))).toBe(true)
+    expect(existsSync(join(dir, 'ring.wav'))).toBe(true)
+  })
+
+  it('sweeps nothing when the audio directory does not exist', async () => {
+    withTempHome()
+    expect(await sweepOrphanedAudio(undefined)).toBe(0)
+  })
+
+  it('skips directory entries instead of failing the sweep', async () => {
+    withTempHome()
+    const dir = audioStorageDir()
+    mkdirSync(join(dir, `${UUID}.wav`), { recursive: true })
+    expect(await sweepOrphanedAudio(undefined)).toBe(0)
+  })
+
+  it('sweeps on activation against the loaded setting', async () => {
+    withTempHome()
+    const dir = audioStorageDir()
+    mkdirSync(dir, { recursive: true })
+    const kept = `${UUID}.wav`
+    const orphan = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.ogg'
+    writeFileSync(join(dir, kept), 'keep')
+    writeFileSync(join(dir, orphan), 'drop')
+    const ctx = new Context()
+    class LoadedSettings extends MemorySettings {
+      protected load(): Promise<Record<string, unknown>> {
+        return Promise.resolve({
+          [NOTIFY_SETTINGS_NAMESPACE]: { customAudioUrl: `${AUDIO_URL_PREFIX}/${kept}` },
+        })
+      }
+    }
+    await ctx.plugin(LoadedSettings).await()
+    const fiber = ctx.plugin({ apply })
+    await fiber.await()
+    // The sweep runs asynchronously after activation; wait for its observable effect.
+    expect(existsSync(join(dir, kept))).toBe(true)
+    await vi.waitFor(() => { expect(existsSync(join(dir, orphan))).toBe(false) })
+    await fiber.dispose()
   })
 })

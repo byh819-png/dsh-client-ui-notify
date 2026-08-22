@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createSnapshotStore, type SessionListState, type WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-web-react'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { DEFAULT_NOTIFY_SETTINGS, type NotifySettings } from '../src/notify-settings.ts'
 import { NotifyRow, MAX_CUSTOM_AUDIO_BYTES } from '../src/client/NotifyRow.tsx'
 import type { NotifyRowComponentProps } from '../src/client/NotifyRow.tsx'

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** ui-notify apply wiring: settings dictionaries riding the locale service,
  * declaration-aware row registration, config projection into the row store,
  * field writes routed through the runtime to the settings transport, and
@@ -8,7 +9,9 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore, type SessionId, type SessionListState, type SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
-import { SettingsScopeBinder } from '@deepseek-ai/dsh-client-ui-settings/client'
+// Mount the settings domain base plugin itself: it owns the describe mirror
+// and constructs ctx.settingsScope (the current HEAD architecture).
+import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, SETTINGS_NS } from '@deepseek-ai/dsh-client-ui-notify/client'
 import type { NotifyRowInjected } from '@deepseek-ai/dsh-client-ui-notify/client'
 import { DEFAULT_NOTIFY_SETTINGS, NOTIFY_SETTINGS_NAMESPACE, NotifySettingsSchema } from '../src/notify-settings.ts'
@@ -59,7 +62,7 @@ async function bench(isLoopback = true) {
   ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback } as never)
   // The settings transport and the forwarded-event port the plugin injects.
   new TestRemote(ctx)
-  await ctx.plugin(SettingsScopeBinder).await()
+  await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   const sessionsList = createSnapshotStore<SessionListState>({
     ids: [], byId: {}, current: undefined, phase: 'ready',
     subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
@@ -161,7 +164,9 @@ describe('ui-notify apply', () => {
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const { instance, face } = faceOf(b.slots)
-    // The scope read landed and the mirror follows it.
+    // The describe mirror read the section at bench time; invalidate it so the
+    // scope converges on the host section, then the mirror follows it.
+    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(instance.getSnapshot().config.method).toBe('tts') })
 
     face.setField('enabled', true)
@@ -185,8 +190,12 @@ describe('ui-notify apply', () => {
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const { entry, instance } = toastFaceOf(b.slots)
+    const row = faceOf(b.slots)
     expect(entry.options).toMatchObject({ id: 'notify', order: 30 })
     expect(entry.locale).toBe(SETTINGS_NS)
+    // Converge the describe mirror on the host section before driving edges.
+    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    await vi.waitFor(() => { expect(row.instance.getSnapshot().config.enabled).toBe(true) })
     expect(instance.getSnapshot().toast).toBeNull()
 
     // An answer-complete edge: the sound plays (browser engine no-ops under
@@ -209,6 +218,9 @@ describe('ui-notify apply', () => {
     b.setHostSection({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, systemNotify: true })
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const row = faceOf(b.slots)
+    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    await vi.waitFor(() => { expect(row.instance.getSnapshot().config.systemNotify).toBe(true) })
     const NotificationMock = vi.fn()
     NotificationMock.permission = 'granted'
     vi.stubGlobal('Notification', NotificationMock)
@@ -251,6 +263,9 @@ describe('ui-notify apply', () => {
     let resolveDescribe!: (value: Awaited<ReturnType<typeof describe>>) => void
     const pending = new Promise<Awaited<ReturnType<typeof describe>>>((done) => { resolveDescribe = done })
     b.describe.mockImplementationOnce(() => pending)
+    // Invalidate the mirror so its next re-read is the slow one; the notify
+    // plugin binds against the still-stale mirror and converges on resolve.
+    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const { instance } = faceOf(b.slots)

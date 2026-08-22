@@ -4,9 +4,10 @@
  * URL. One file per id under `$DSH_HOME/storages/ui-notify/audio`, served,
  * uploaded, and deleted through a webServer prefix route guarded by the same
  * trust fence as `/api` (loopback-only: `isTrustedApiRequest` with an empty
- * trust list, exactly the pin the /api privileged methods use).
+ * trust list, exactly the pin the /api privileged methods use). A retention
+ * sweep at host activation removes files no longer referenced by the setting.
  */
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isTrustedApiRequest } from '@deepseek-ai/dsh-client-connection'
@@ -128,6 +129,58 @@ async function deleteAudio(file: string, res: ServerResponse): Promise<void> {
     res.writeHead(500)
     res.end('delete failed')
   }
+}
+
+/**
+ * The stored file name one served URL references, or undefined when the URL
+ * does not point into this store (empty, an http(s)/data URL, or a tail this
+ * route cannot parse).
+ * @param url - the setting's `customAudioUrl` value.
+ * @returns the `<id>.<ext>` file name, or undefined for a non-hosted reference.
+ */
+function hostedFileName(url: string): string | undefined {
+  if (!url.startsWith(`${AUDIO_URL_PREFIX}/`)) return undefined
+  const parsed = parseTail(url.slice(AUDIO_URL_PREFIX.length))
+  return parsed === undefined ? undefined : `${parsed.id}.${parsed.extension}`
+}
+
+/**
+ * Retention sweep: remove every stored audio file not referenced by the
+ * current custom-audio setting. The setting's `customAudioUrl` is the only
+ * reference into this store — anything else is an orphan (a hand-edited
+ * setting, an upload whose settings write never landed, or a failed eager
+ * cleanup) and is deleted. Only files matching the canonical id pattern are
+ * ever touched; foreign content in the directory is left alone. An absent
+ * directory sweeps nothing; a non-ENOENT read or unlink failure throws so the
+ * caller can surface it.
+ * @param referencedUrl - the current `customAudioUrl` setting value.
+ * @returns how many files were removed.
+ */
+export async function sweepOrphanedAudio(referencedUrl: string | undefined): Promise<number> {
+  const referenced = referencedUrl === undefined ? undefined : hostedFileName(referencedUrl)
+  const dir = audioStorageDir()
+  let removed = 0
+  try {
+    const entries = await readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      const parsed = parseTail(`/${entry.name}`)
+      if (parsed === undefined || entry.name === referenced) continue
+      try {
+        await unlink(join(dir, entry.name))
+        removed += 1
+      } catch (error) {
+        // A file already gone (an eager row delete racing the sweep) is fine;
+        // any other failure is real and surfaces.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  } catch (error) {
+    // An absent directory sweeps nothing; any other read failure is real.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+    throw error
+  }
+  return removed
 }
 
 /**

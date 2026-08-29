@@ -4,8 +4,8 @@
  * (`show` replaces the current toast — the newest alert wins); the popup
  * component dismisses itself after its hold, or the user closes it early.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { AlertKind } from './notify-runtime.ts'
 
 /** One shown popup; `seq` keys the view so a re-show restarts the hold. */

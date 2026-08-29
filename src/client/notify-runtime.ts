@@ -5,7 +5,9 @@
  * same config through the `notify/config` event.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId, SessionListState, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEFAULT_NOTIFY_SETTINGS, type NotifySettings } from '../notify-settings.ts'
 import { dispatch, type PlaybackEngine } from './sounds.ts'
 
@@ -36,10 +38,10 @@ export interface NotifyAlert {
 }
 
 /** One session summary projected to the two observed facts. */
-function observationOf(summary: SessionListState['byId'][SessionId]): SessionObservation {
+function observationOf(summary: SessionListState['byId'][SessionId], pending: boolean): SessionObservation {
   return {
     running: summary.running,
-    pending: summary.pendingInteraction !== undefined,
+    pending,
   }
 }
 
@@ -87,6 +89,7 @@ export class NotifyRuntime {
     ctx.effect(() => ctx.on('connection/reset', () => { this.rebaseline() }), 'ui-notify: connection reset rebaseline')
     this.adopt()
     ctx.effect(() => ctx.sessions.list.subscribe(() => { this.observe() }), 'ui-notify: session list observation')
+    ctx.effect(() => ctx.uiSession.pendingInteractions.subscribe(() => { this.observe() }), 'ui-notify: pending interaction observation')
     this.observe()
   }
 
@@ -150,16 +153,20 @@ export class NotifyRuntime {
    */
   private observe(): void {
     const snapshot = this.ctx.sessions.list.getSnapshot()
+    // Pending UI interactions (approval, plan review, ask-user) live in the
+    // uiSession service's pendingInteractions map, keyed by session id; a
+    // present key means the session waits on some interaction.
+    const pending = this.ctx.uiSession.pendingInteractions.getSnapshot()
     if (!this.baseline) {
       this.baseline = true
       for (const [id, summary] of Object.entries(snapshot.byId)) {
-        this.observed.set(id as SessionId, observationOf(summary))
+        this.observed.set(id as SessionId, observationOf(summary, pending.has(id as SessionId)))
       }
       return
     }
     for (const [id, summary] of Object.entries(snapshot.byId)) {
       const sessionId = id as SessionId
-      const next = observationOf(summary)
+      const next = observationOf(summary, pending.has(sessionId))
       const prev = this.observed.get(sessionId)
       if (prev === undefined) {
         this.observed.set(sessionId, next)

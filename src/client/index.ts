@@ -6,8 +6,8 @@
  * owns its own settings and overlay surfaces. The Host half (`src/index.ts`)
  * exposes the durable `ui-notify` namespace this row reads and writes.
  */
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { BoundActions } from '@deepseek-ai/dsh-client-store'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -15,8 +15,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: pulls the runtime plugin's Context merge (ctx.sessions).
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
+// Type-only: pulls the slot registry Context merge (ctx.slots).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the uiSession service Context merge (ctx.uiSession).
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: pulls the session-controller client's Context merge (ctx.sessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import { NOTIFY_SETTINGS_NAMESPACE, type NotifySettings } from '../notify-settings.ts'
 import { en, zh, type NotifyKey } from './locales.ts'
 import { NotifyRuntime, type NotifyAlert } from './notify-runtime.ts'
@@ -90,7 +94,7 @@ declare module '@deepseek-ai/cordis' {
  * plus slots/locale for the preference row. `remote` carries the forwarded
  * settings invalidation that `bindSettingsScope` subscribes to on this context.
  */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions', 'uiSession']
 
 /**
  * Client plugin body: provide the notification runtime, register the

@@ -3,10 +3,12 @@
  * picker, and preview — every control drives the injected setField/preview. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { createSnapshotStore, type SessionListState, type WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { DEFAULT_NOTIFY_SETTINGS, type NotifySettings } from '../src/notify-settings.ts'
-import { NotifyRow, MAX_CUSTOM_AUDIO_BYTES } from '../src/client/NotifyRow.tsx'
+import { DEFAULT_NOTIFY_SETTINGS, MAX_AUDIO_BYTES, type NotifySettings } from '../src/notify-settings.ts'
+import { NotifyRow } from '../src/client/NotifyRow.tsx'
 import type { NotifyRowComponentProps } from '../src/client/NotifyRow.tsx'
 import { createNotifyRowStore } from '../src/client/settings-store.ts'
 
@@ -48,11 +50,25 @@ function emptySessions() {
   return bindSnapshotSelector(store)
 }
 function emptyWorkspaces() {
-  const store = createSnapshotStore<WorkspaceListState>({
+  const store = createSnapshotStore<WorkspaceSnapshot>({
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: true, recentWorkspaceId: undefined,
   })
   return bindSnapshotSelector(store)
+}
+
+type AttentionSnapshot = Parameters<Parameters<NotifyRowComponentProps['useSessionPendingInteraction']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: NotifyRowComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+
+/** A Notification constructor mock carrying the permission surface the row reads. */
+function notificationMock(permission: NotificationPermission) {
+  const mock = vi.fn() as ReturnType<typeof vi.fn> & {
+    permission: NotificationPermission
+    requestPermission: ReturnType<typeof vi.fn>
+  }
+  mock.permission = permission
+  mock.requestPermission = vi.fn(() => Promise.resolve('denied' as NotificationPermission))
+  return mock
 }
 
 function mount(config: Partial<NotifySettings> = {}) {
@@ -62,6 +78,7 @@ function mount(config: Partial<NotifySettings> = {}) {
   const preview = vi.fn()
   const props: NotifyRowComponentProps = {
     useSessions: emptySessions(),
+    useSessionPendingInteraction,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
@@ -110,8 +127,7 @@ describe('NotifyRow', () => {
 
   it('enables the system switch only when permission is already granted', () => {
     const b = mount({ enabled: true })
-    const NotificationMock = vi.fn()
-    NotificationMock.permission = 'granted'
+    const NotificationMock = notificationMock('granted')
     vi.stubGlobal('Notification', NotificationMock)
     try {
       fireEvent.click(switchOf(/System notification/))
@@ -123,9 +139,8 @@ describe('NotifyRow', () => {
 
   it('requests permission on the switch click and persists only when granted', async () => {
     const b = mount({ enabled: true })
-    const NotificationMock = vi.fn()
-    NotificationMock.permission = 'default'
-    NotificationMock.requestPermission = vi.fn(() => Promise.resolve('granted' as NotificationPermission))
+    const NotificationMock = notificationMock('default')
+    NotificationMock.requestPermission.mockResolvedValue('granted' as NotificationPermission)
     vi.stubGlobal('Notification', NotificationMock)
     try {
       fireEvent.click(switchOf(/System notification/))
@@ -140,8 +155,7 @@ describe('NotifyRow', () => {
 
   it('refuses to persist when permission is denied', () => {
     const b = mount({ enabled: true })
-    const deniedMock = vi.fn()
-    deniedMock.permission = 'denied'
+    const deniedMock = notificationMock('denied')
     vi.stubGlobal('Notification', deniedMock)
     try {
       fireEvent.click(switchOf(/System notification/))
@@ -201,7 +215,7 @@ describe('NotifyRow', () => {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       fireEvent.change(fileInput, { target: { files: [] } })
       expect(b.setField).not.toHaveBeenCalled()
-      const file = new File([new Uint8Array(MAX_CUSTOM_AUDIO_BYTES + 1)], 'big.wav', { type: 'audio/wav' })
+      const file = new File([new Uint8Array(MAX_AUDIO_BYTES + 1)], 'big.wav', { type: 'audio/wav' })
       fireEvent.change(fileInput, { target: { files: [file] } })
       expect(b.setField).not.toHaveBeenCalled()
       expect(fetchMock).not.toHaveBeenCalled()

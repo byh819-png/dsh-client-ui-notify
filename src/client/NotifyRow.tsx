@@ -18,9 +18,6 @@ import type { NotifyKey } from './locales.ts'
 import type { createNotifyRowStore } from './settings-store.ts'
 import css from './NotifyRow.module.css'
 
-/** Backwards-compatible alias for the shared audio size cap. */
-export { MAX_AUDIO_BYTES as MAX_CUSTOM_AUDIO_BYTES } from '../notify-settings.ts'
-
 /** Injected business face: the one-field write and the immediate preview. */
 export interface NotifyRowInjected {
   /** Persist one notification setting field. */
@@ -219,7 +216,7 @@ export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponent
               className={css.input}
               type="text"
               value={config.customAudioUrl}
-              placeholder="https://… 或 data:audio/…"
+              placeholder={t('notify.customAudioUrlPlaceholder')}
               disabled={!active}
               onChange={(event) => { setField(NOTIFY_FIELDS.customAudioUrl, event.target.value) }}
             />

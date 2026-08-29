@@ -2,12 +2,22 @@
   "extends": "../../../tsconfig.base.client.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "lib/types"
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
-  "include": [
-    "src/client",
-    "src/notify-settings.ts",
-    "src/css-modules.d.ts"
+  "files": [
+    "src/client/builtin-ringtone.ts",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/notify-runtime.ts",
+    "src/client/NotifyRow.tsx",
+    "src/client/NotifyToast.tsx",
+    "src/client/settings-store.ts",
+    "src/client/sounds.ts",
+    "src/client/system-notify.ts",
+    "src/client/toast-store.ts",
+    "src/css-modules.d.ts",
+    "src/notify-settings.ts"
   ],
   "references": [
     {
@@ -17,25 +27,43 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../settings/settings"
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../core/session"
     },
     {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../locale"
     },
     {
-      "path": "../runtime"
-    },
-    {
-      "path": "../ui-slots"
+      "path": "../store"
     },
     {
       "path": "../ui-layout"
     },
     {
       "path": "../ui-settings"
+    },
+    {
+      "path": "../ui-slots"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
     }
   ]
 }

@@ -3,9 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo",
     "types": ["node"]
   },
-  "include": [
+  "files": [
     "src/index.ts",
     "src/audio-store.ts",
     "src/invariant.ts",

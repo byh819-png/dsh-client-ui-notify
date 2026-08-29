@@ -5,8 +5,10 @@
  * HMR collapse recovery. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore, type SessionId, type SessionListState, type SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 // Mount the settings domain base plugin itself: it owns the describe mirror
@@ -41,35 +43,34 @@ async function bench(isLoopback = true) {
     secrets: [],
     revision: 0,
   })
-  const describe = vi.fn(() => Promise.resolve({
-    rpcId: 'notify-describe' as never,
-    result: {
-      ok: true as const,
-      value: { writable: true, hasDocument: true, namespaces: [namespace()] },
-    },
+  const describe = vi.fn(async () => ({
+    ok: true as const,
+    value: { writable: true, hasDocument: true, namespaces: [namespace()] },
   }))
-  const mutate = vi.fn((request: { ops: { op: string; path: string[]; value?: unknown }[] }) => {
-    for (const op of request.ops) {
+  const mutate = vi.fn(async (_ns: string, ops: { op: string; path: string[]; value?: unknown }[], _revision?: number) => {
+    for (const op of ops) {
       if (op.op === 'set' && op.path[0] !== undefined) {
         section = { ...section, [op.path[0]]: op.value }
       }
     }
-    return Promise.resolve({
-      rpcId: 'notify-mutate' as never,
-      result: { ok: true as const, value: namespace() },
-    })
+    return { ok: true as const, value: namespace() }
   })
-  ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback } as never)
-  // The settings transport and the forwarded-event port the plugin injects.
-  new TestRemote(ctx)
+  ctx.provide('connection', { api: {}, isLoopback } as never)
+  // The settings transport rides the remote.settings namespace (the domain
+  // base's inject); the same double carries the forwarded-event port.
+  const events = new TestRemote(ctx, { settings: { describe, mutate } })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   const sessionsList = createSnapshotStore<SessionListState>({
     ids: [], byId: {}, current: undefined, phase: 'ready',
     subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
   })
   ctx.provide('sessions', { list: sessionsList } as never)
+  // The pending-interaction root the runtime observes for the
+  // authorization-needed edge (a uiSession service map, not a SessionSummary field).
+  const pending = createSnapshotStore<ReadonlyMap<SessionId, { key: string; kind: string; sessionId: SessionId }>>(new Map())
+  ctx.provide('uiSession', { pendingInteractions: pending } as never)
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, locale, describe, mutate, sessionsList,
+    ctx, slots: ctx.get('slots') as SlotRegistry, locale, describe, mutate, events, sessionsList, pending,
     setHostSection: (next: typeof section) => { section = next },
   }
 }
@@ -135,7 +136,7 @@ function listState(summaries: SessionSummary[]): SessionListState {
 
 describe('ui-notify apply', () => {
   it('declares the slot and locale services', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope', 'sessions', 'uiSession'])
   })
 
   it('registers localized copy and the row (declaration before or after apply)', async () => {
@@ -166,7 +167,7 @@ describe('ui-notify apply', () => {
     const { instance, face } = faceOf(b.slots)
     // The describe mirror read the section at bench time; invalidate it so the
     // scope converges on the host section, then the mirror follows it.
-    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(instance.getSnapshot().config.method).toBe('tts') })
 
     face.setField('enabled', true)
@@ -177,7 +178,7 @@ describe('ui-notify apply', () => {
     // under jsdom; the dispatch path is pinned by the runtime spec).
     expect(() => { face.preview() }).not.toThrow()
     await vi.waitFor(() => {
-      const writes = b.mutate.mock.calls.flatMap(call => call[0].ops)
+      const writes = b.mutate.mock.calls.flatMap(call => call[1] as readonly { op: string; path: string[]; value?: unknown }[])
       expect(writes.some(op => op.path[0] === 'method' && op.value === 'custom')).toBe(true)
     })
     // The row's copy rides the standard locale seat.
@@ -194,7 +195,7 @@ describe('ui-notify apply', () => {
     expect(entry.options).toMatchObject({ id: 'notify', order: 30 })
     expect(entry.locale).toBe(SETTINGS_NS)
     // Converge the describe mirror on the host section before driving edges.
-    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(row.instance.getSnapshot().config.enabled).toBe(true) })
     expect(instance.getSnapshot().toast).toBeNull()
 
@@ -207,7 +208,7 @@ describe('ui-notify apply', () => {
     })
 
     // An authorization-needed edge replaces the toast (newest wins).
-    b.sessionsList.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    b.pending.set(new Map([['sess-1' as SessionId, { key: 'k', kind: 'approval', sessionId: 'sess-1' as SessionId }]]))
     expect(instance.getSnapshot().toast).toEqual({
       seq: 2, kind: 'auth-required', sessionId: 'sess-1', title: 'sess-1',
     })
@@ -219,9 +220,9 @@ describe('ui-notify apply', () => {
     declareItems(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const row = faceOf(b.slots)
-    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(row.instance.getSnapshot().config.systemNotify).toBe(true) })
-    const NotificationMock = vi.fn()
+    const NotificationMock = vi.fn() as ReturnType<typeof vi.fn> & { permission: NotificationPermission }
     NotificationMock.permission = 'granted'
     vi.stubGlobal('Notification', NotificationMock)
     try {
@@ -239,10 +240,10 @@ describe('ui-notify apply', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const { instance } = faceOf(b.slots)
     await vi.waitFor(() => { expect(b.describe).toHaveBeenCalled() })
-    b.ctx.remote.$dispatch('settings/document-updated', ['unrelated', 0])
+    b.events.emit('settings/document-updated', ['unrelated', 0])
     expect(b.describe).toHaveBeenCalledTimes(1)
     b.setHostSection({ ...DEFAULT_NOTIFY_SETTINGS, method: 'custom', customAudioUrl: 'https://x/a.wav' })
-    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(instance.getSnapshot().config.customAudioUrl).toBe('https://x/a.wav') })
 
     const remote = await bench(false)
@@ -265,7 +266,7 @@ describe('ui-notify apply', () => {
     b.describe.mockImplementationOnce(() => pending)
     // Invalidate the mirror so its next re-read is the slow one; the notify
     // plugin binds against the still-stale mirror and converges on resolve.
-    b.ctx.remote.$dispatch('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
+    b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     const { instance } = faceOf(b.slots)

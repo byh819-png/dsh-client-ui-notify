@@ -3,11 +3,25 @@
  * field writes, preview, and config-event publication. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, type SessionId, type SessionListState, type SessionSummary } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { DEFAULT_NOTIFY_SETTINGS, type NotifySettings } from '../src/notify-settings.ts'
 import { NotifyRuntime, type NotifyAlert } from '../src/client/notify-runtime.ts'
 
 const SID = 'sess-1' as SessionId
+
+/** One minimal pending-interaction entry; the runtime only reads key presence. */
+interface PendingInteraction {
+  key: string
+  kind: string
+  sessionId: SessionId
+}
+
+/** A pending-interaction entry keyed to the spec's session. */
+function pendingInteraction(kind: string): PendingInteraction {
+  return { key: 'k', kind, sessionId: SID }
+}
 
 function summary(patch: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -37,6 +51,7 @@ function listState(summaries: SessionSummary[]): SessionListState {
 interface Bench {
   ctx: Context
   list: ReturnType<typeof createSnapshotStore<SessionListState>>
+  pending: ReturnType<typeof createSnapshotStore<ReadonlyMap<SessionId, PendingInteraction>>>
   engine: { playBuiltin: ReturnType<typeof vi.fn>; playTts: ReturnType<typeof vi.fn>; playCustom: ReturnType<typeof vi.fn> }
   runtime: NotifyRuntime
   hostSet: ReturnType<typeof vi.fn>
@@ -60,13 +75,18 @@ function bench(initialHost?: NotifySettings): Bench {
     subscribe: (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn) } },
     set: hostSet,
     unset: vi.fn(),
+    mutate: vi.fn(),
   }
   const list = createSnapshotStore<SessionListState>(listState([]))
   ctx.provide('sessions', { list } as never)
+  // The pending-interaction root the runtime observes for the
+  // authorization-needed edge (a uiSession service map, not a SessionSummary field).
+  const pending = createSnapshotStore<ReadonlyMap<SessionId, PendingInteraction>>(new Map())
+  ctx.provide('uiSession', { pendingInteractions: pending } as never)
   const engine = { playBuiltin: vi.fn(), playTts: vi.fn(), playCustom: vi.fn() }
   const runtime = new NotifyRuntime(ctx, host, engine)
   return {
-    ctx, list, engine, runtime, hostSet,
+    ctx, list, pending, engine, runtime, hostSet,
     publishHost(next) {
       value = next === undefined ? undefined : { ...next }
       for (const listener of [...listeners]) listener()
@@ -95,7 +115,7 @@ describe('NotifyRuntime', () => {
     b.ctx.on('notify/alert', (alert) => { alerts.push(alert) })
     b.list.set(listState([summary({ running: true })]))
     b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
-    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    b.pending.set(new Map([[SID, pendingInteraction('approval')]]))
     expect(alerts).toEqual([
       { kind: 'answer-complete', sessionId: SID, title: 'sess-1' },
       { kind: 'auth-required', sessionId: SID, title: 'sess-1' },
@@ -114,7 +134,7 @@ describe('NotifyRuntime', () => {
     const disabledAlerts: NotifyAlert[] = []
     disabled.ctx.on('notify/alert', (alert) => { disabledAlerts.push(alert) })
     disabled.list.set(listState([summary()]))
-    disabled.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 2 })]))
+    disabled.pending.set(new Map([[SID, pendingInteraction('approval')]]))
     expect(disabledAlerts).toEqual([])
   })
 
@@ -136,7 +156,7 @@ describe('NotifyRuntime', () => {
     b.ctx.on('notify/system', (alert) => { systems.push(alert) })
     b.list.set(listState([summary({ running: true })]))
     b.list.set(listState([summary({ running: false, updatedAt: 2 })]))
-    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 3 })]))
+    b.pending.set(new Map([[SID, pendingInteraction('approval')]]))
     expect(alerts).toEqual([
       { kind: 'answer-complete', sessionId: SID, title: 'sess-1' },
       { kind: 'auth-required', sessionId: SID, title: 'sess-1' },
@@ -152,7 +172,7 @@ describe('NotifyRuntime', () => {
     const systems: NotifyAlert[] = []
     b.ctx.on('notify/system', (alert) => { systems.push(alert) })
     b.list.set(listState([summary()]))
-    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 2 })]))
+    b.pending.set(new Map([[SID, pendingInteraction('approval')]]))
     expect(systems).toEqual([])
   })
 
@@ -170,7 +190,7 @@ describe('NotifyRuntime', () => {
   it('rings on the pending-appears edge with the custom method and its URL', () => {
     const b = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, method: 'custom', customAudioUrl: 'https://x/a.wav' })
     b.list.set(listState([summary()]))
-    b.list.set(listState([summary({ pendingInteraction: 'approval', updatedAt: 2 })]))
+    b.pending.set(new Map([[SID, pendingInteraction('approval')]]))
     expect(b.engine.playCustom).toHaveBeenCalledWith('https://x/a.wav')
   })
 
@@ -194,7 +214,7 @@ describe('NotifyRuntime', () => {
 
     const noAuth = bench({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, onAuthRequired: false })
     noAuth.list.set(listState([summary()]))
-    noAuth.list.set(listState([summary({ pendingInteraction: 'question', updatedAt: 2 })]))
+    noAuth.pending.set(new Map([[SID, pendingInteraction('question')]]))
     expect(noAuth.engine.playBuiltin).not.toHaveBeenCalled()
   })
 

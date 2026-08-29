@@ -1,71 +1,108 @@
+---
+description: "dsh Web 客户端的提示音插件：在回答完成与需要授权的事件边上响铃并弹出右下角卡片；支持内置铃声、文字转语音或自定义音频文件，在 General 设置行配置。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-notify
 
 [English](README.md) | 中文
 
-Web 客户端的**铃声提醒插件**：当某个会话的回答完成、或某个会话需要授权时播放声音、在右下角弹出提示卡片，并可发送浏览器系统通知，后台会话不会在无人注意时悄悄结束。
-浏览器半部分提供 `ctx.notify`（`NotifyRuntime`）、把偏好行注册进设置页的**通用**分区，并把提示卡片注册进外壳的浮动浮层位；Host 半部分暴露该行通过 `ctx.settingsScope` 读写、持久化在用户设置文档（默认 `$DSH_HOME/settings.yaml`）中的 `ui-notify` 设置命名空间。
+## 概述
 
-## 提醒事件
+`dsh-client-ui-notify` 是 dsh Web 客户端的浏览器通知插件：观察会话列表与 pending 交互映射，在某个会话回答完成或需要授权时播放声音、为每次响铃弹出短暂的右下角卡片，并可发送浏览器系统通知。播放方式可在 General 设置行配置——内置双音铃声、按配置文本朗读的文字转语音，或通过信任围栏保护的 Host 路由上传的自定义音频文件（durable 设置只存服务 URL，不存文件字节）。Host 半区注册 durable 的 `ui-notify` 设置命名空间、提供用户音频路由，并在激活时清扫孤儿音频。
 
-运行时观察 `ctx.sessions.list`，在两个情况下提醒用户，二者都受总开关和各自的开关控制：
+## 目录
 
-- **回答完成** —— 某个会话的 `running` 位从 true 翻转为 false（侧边栏绿色“完成”提示，含当前会话）。
-- **需要授权** —— 某个会话出现 `pendingInteraction`（审批、计划评审或 ask-user 提问）。
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [延伸阅读](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
-第一份列表快照只记录观察状态（加载时已空闲的会话不提醒），`connection/reset` 会重新建立基线，避免重连时的状态回放提醒。
+-----
 
-## 弹窗提示
+<a id="use-this-package"></a>
+## 使用本包
 
-打开**系统通知**开关后，每次响铃还会通过浏览器 **Notification API** 发送一条系统通知（标题为事件类型，正文为会话名称）——与页面内弹窗不同，标签页在后台时也能看到。打开开关时会请求浏览器的通知权限（开关点击即用户手势）；权限被拒绝或浏览器不支持时，开关会拒绝开启并显示行内提示。未获得授权时发送退化为空操作，不会在事件处理器里抛错。
+Web shell 像其他 `dsh.client` 行一样组合本插件；用户打开 General 设置区前它不渲染任何内容，打开后出现通知行。该行拥有总开关、系统通知通道（首次开启时请求浏览器权限）、两个事件开关、声音类型选择器和各方法输入——每个控件通过运行时写入一个 durable 字段，设置传输保持在单一所有者之后。
 
-## 提醒方式
+### 启用提醒
 
-- **内置铃声** —— 构建时合成的两声提示音，以 base64 数据 URI 内嵌进 client bundle（`src/client/builtin-ringtone.ts`），无需额外资源路由。
-- **文字转语音** —— 用 `speechSynthesis.speak` 朗读配置的文字（文字为空时跳过）。
-- **自定义音频** —— 播放 http(s) 链接或 data URL，或由行内文件选择器上传到宿主机的本地文件（≤ 1MB）。
-上传的文件落在 `$DSH_HOME/storages/ui-notify/audio/` 下，经带信任围栏的 `/_dsh-ui-notify/audio/<id>.<ext>` webServer 路由读写（与 `/api` 相同的浏览器信任围栏，仅 loopback）；持久化设置只保存服务地址——文件字节永不进入设置文档。
-支持常见音频格式（wav、mp3、ogg、mp4、m4a、webm、aac、flac、aiff、wma、mid）。
+打开总开关即布防响铃；两个事件开关选择响铃的边沿（回答完成、需要授权，或两者），系统通知开关为每次响铃追加一条浏览器通知。试听按钮立即播放当前配置的方法，不受总开关影响。
 
-当平台能力缺失时播放退化为空操作，配置不当的提醒不会在事件处理器里抛错。行内的**试听**按钮立即播放当前方式。
+### 选择声音
 
-每次宿主激活时都会执行一次保留回收：删除当前设置不再引用的托管音频文件（手工编辑的 `customAudioUrl`、设置写入未落地的上传、或失败的事后清理留下的文件）——只会触碰符合 `<uuid>.<ext>` 规范的文件，绝不误删其它内容。
+内置铃声无需配置。文字转语音通过平台合成器朗读配置文本。自定义方法接受 http(s) 链接或不超过 1 MB 的本地音频文件；选中的文件上传到 Host 路由，设置只存服务 URL，文件字节不会撑大设置文档。替换文件时删除旧文件。
 
-## 设置界面
-![设置-通用页面开关](./images/screenshot.zh.png)
+### 可观察的成功与失败
 
-通用设置中添加**启用提醒**总开关、**系统通知**开关、两个事件开关（**回答完成时提醒**/**需要授权时提醒**）、**声音类型**选择器、各方式专属**输入框**和**试听**按钮。每个控件都通过注入的`setField`接口只写一个字段，行组件本身不接触设置传输层。Host 半部分仅在组合了设置提供方时注册命名空间，未组合的部署既不显示该行也不暴露该命名空间。
+一个触发的边沿播放声音并 emit `notify/alert`；系统开关打开时额外 emit `notify/system`。弹窗跟随总开关与事件开关，没有独立开关。方法配置错误、TTS 文本为空、自定义 URL 缺失、系统通知未授权或平台不支持音频时降级为 no-op，不会从事件处理器抛错。
 
-## 安装方法
+-----
 
-**快速开始**：下载 [安装包 (zip)](https://github.com/byh819-png/dsh-client-ui-notify/raw/main/release/dsh-client-ui-notify-0.1.1-rc.2.zip)，解压后 Windows 运行 `install.ps1`、macOS/Linux 运行 `bash install.sh`，重启 `dsh web` 即可。
+<a id="understand-the-implementation"></a>
+## 理解实现
 
-手动安装：
+<details>
+<summary>实现内部——点击展开</summary>
 
-1. 把插件目录（`package.json` + `lib/`）复制到 `$DSH_HOME/profiles/node_modules/@deepseek-ai/dsh-client-ui-notify/`（`$DSH_HOME` 默认 `~/.dsh`）。
-2. 在 `$DSH_HOME/profiles/web/cordis.patch.yml`（或负责提供 web UI 的 profile）追加挂载行：
+本包贯彻一条所有权规则：运行时拥有 durable 设置与每次播放决策，设置行镜像同一份配置，Host 拥有该接缝中唯一的字节存储。
 
-   ```yaml
-   - insert:
-       - id: ui-notify
-         name: '@deepseek-ai/dsh-client-ui-notify'
-   ```
+### 边沿检测
 
-3. 重启 `dsh web`并刷新浏览器，**设置 → 通用设置** 中即出现提醒配置（「启用提醒」「系统通知」及两个事件开关）。
+`NotifyRuntime` 采纳设置作用域，并将会话列表与 pending 交互映射与逐会话镜像做 diff。running → idle 触发"回答完成"；出现 pending 交互触发"需要授权"。首个快照只记录（加载时已空闲的会话不响铃），`connection/reset` 时重新基线，重连的状态重放不会伪造边沿。每个触发的边沿播放配置的声音，并在所属上下文中 emit `notify/alert` 与可选的 `notify/system` 事件。
 
-卸载方法：删除复制的目录与 `cordis.patch.yml` 里的 `ui-notify` 行。
+### 用户音频存储
 
-> 插件是普通 npm 包，运行时依赖（cordis、dsh-settings 等）由 dsh 自带闭包提供，无需额外安装。
+自定义方法的文件经 webServer 前缀路由（`/_dsh-ui-notify/audio/<uuid>.<ext>`）落入 `$DSH_HOME/storages/ui-notify/audio`，路由与 `/api` 特权方法共用同一 loopback 信任围栏。URL 尾部先被钉死为规范 UUID 加白名单扩展名，才允许触碰文件；上传上限 1 MB，响应带 immutable 缓存头（id 即内容标识）。Host 激活时的保留清扫删除设置不再引用的文件，且只动匹配规范 id 模式的文件。
 
+### 设置行与弹窗
+
+设置行注册进 General 区的 item 槽，带一个镜像运行时配置的 store，由运行时单调 revision 把关，过期副本永不渲染。弹窗注册进 shell 的浮动 overlay 席位；最新告警胜出（替换当前 toast），保持、淡出后自行关闭或由用户关闭。卡片经 body portal 渲染并保持点击穿透，通知永不遮挡下层应用。
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## 延伸阅读
+
+以下页面覆盖本插件所组合的表面。
+
+- [ui-settings](../ui-settings/README.zh.md) —— 设置行传输所依赖的设置命名空间作用域服务。
+- [ui-settings-general](../ui-settings-general/README.zh.md) —— 承载 General 区的设置外壳。
+- [ui-session](../ui-session/README.zh.md) —— 运行时观察的 pending 交互根。
+- [settings](../../settings/README.zh.md) —— durable 用户设置接缝及其文件提供者。
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无，本插件只播放浏览器声音；没有任何内容进入模型请求。
+无，因为本包是浏览器侧通知 UI，不注册任何面向模型的内容。
 
-#### KV 缓存影响
+#### KV Cache 影响
 
-无；本包既不组装也不发送任何提供方请求。
+无；本插件不组装任何 provider 请求，也不新增自己的会话事件。
 
-## 已知限制与待办
+## 已知限制与暂缓事项
 
-- **用户音频路由仅限 loopback** —— 通过 `trustedHosts` 向局域网浏览器提供服务的部署在上传/下载时会收到 403（http(s)/data URL 播放不受影响）；把路由接入可信主机列表的工作待办。
-- **TTS 音色跟随浏览器** —— 没有音色/语速/音调控件，文本框是唯一的 TTS 输入。
-- **两种事件共用一段文字** —— 无论回答完成还是需要授权，TTS 方式朗读的都是同一段文字。
+<a id="known-limitations-and-deferred-work"></a>
+
+以下限制定义了通知接缝无法触达之处；它们是当前包的约束。
+
+- **弹窗只保留最新一条告警**——连续触发的边沿每次都响铃，但只折叠为最新 toast；没有通知队列。
+- **系统通知需要浏览器授权**——设置行在首次开启时请求权限；未授权或平台不支持时该通道静默 no-op。
+- **自定义音频单文件上限 1 MB**，且只接受白名单音频扩展名；更大的或非常规文件需改用 http(s) 链接。
+- **铃声固定**——两种边沿共用内置的双音铃声；弹窗以强调色区分类型，而非声音。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+弹窗的保持与淡出计时分布在两处且必须一致：`NotifyToast.tsx` 中的 `HOLD_MS`/`FADE_MS` 与 `NotifyToast.module.css` 中 `dsh-notify-toast-fade` 动画的延迟/时长——不一致会截断淡出或留下不可见卡片。用户音频路由与 `/api` 共用 `isTrustedApiRequest` 围栏；请保持仅 loopback。
+
+</details>

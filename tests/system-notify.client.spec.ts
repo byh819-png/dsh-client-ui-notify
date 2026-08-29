@@ -14,7 +14,10 @@ describe('showSystemNotification', () => {
   it('is a no-op while permission is not granted', () => {
     for (const permission of ['default', 'denied'] as const) {
       const NotificationMock = vi.fn()
-      NotificationMock.permission = permission
+      // Leading semicolon: the parenthesized cast must not continue the
+      // previous `vi.fn()` call (ASI), which would read the const in its own
+      // initializer and throw a TDZ ReferenceError.
+      ;(NotificationMock as unknown as { permission: string }).permission = permission
       vi.stubGlobal('Notification', NotificationMock)
       showSystemNotification('回答已完成', 'sess-1')
       expect(NotificationMock).not.toHaveBeenCalled()
@@ -24,7 +27,7 @@ describe('showSystemNotification', () => {
 
   it('creates one tagged Notification once permission is granted', () => {
     const NotificationMock = vi.fn()
-    NotificationMock.permission = 'granted'
+    ;(NotificationMock as unknown as { permission: string }).permission = 'granted'
     vi.stubGlobal('Notification', NotificationMock)
     showSystemNotification('需要授权', 'sess-1')
     expect(NotificationMock).toHaveBeenCalledTimes(1)

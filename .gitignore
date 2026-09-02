@@ -1,5 +1,7 @@
-# Build artifacts: tsc declaration output and the tsdown host/client bundles.
-lib/
+# lib/ (build artifacts: tsc declarations and tsdown host/client bundles) is
+# committed on purpose — the plugin is installed from git via
+# `dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify`,
+# which has no build step, so consumers need the compiled bundles in-tree.
 
 # Dependencies (workspace-linked by pnpm).
 node_modules/

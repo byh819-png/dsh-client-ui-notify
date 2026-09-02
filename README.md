@@ -1,108 +1,126 @@
+# dsh-client-ui-notify
+
+[English](README.en.md) | 中文
+
+DeepSeek Harness（dsh）网页端的**铃声提醒插件**：当 AI 回答完成、或需要你授权确认时，自动响铃提醒并弹出右下角提示卡片，让你可以切到别的窗口干别的事，不用担心错过关键节点。
+
+![设置界面截图](images/screenshot.zh.png)
+
+## ✨ 功能
+
+- **回答完成提醒** —— AI 回答结束时响铃，切窗口干活也不会错过
+- **需要授权提醒** —— AI 等待你确认（执行命令、提问等）时响铃
+- **三种提醒声音**：
+  - 🔔 **内置铃声**：双音铃声，开箱即用
+  - 🗣️ **文字转语音**：朗读你配置的文字（如"回答完成了"）
+  - 🎵 **自定义音频**：上传自己的音频文件（≤1MB），或直接填一个音频链接
+- **右下角弹窗**：每次响铃时弹出提示卡片，标明哪个会话、什么事件
+- **浏览器系统通知**（可选）：标签页在后台也能收到系统级通知
+
+## 📦 安装
+
+### 前提
+
+已安装 [dsh](https://www.npmjs.com/package/@deepseek-ai/dsh)（`dsh --version` 能正常输出版本号），并至少运行过一次 `dsh web`。
+
+### 方式一：从 Git 仓库安装
+
+```bash
+dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify
+```
+
+### 方式二：从 Git 仓库安装（完整 URL 形式）
+
+```bash
+dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
+```
+
+两种写法等价，均要求仓库中包含构建产物（`lib/` 目录），否则需要先在本地构建。
+
+### 安装后
+
+1. 重启 dsh web（Ctrl+C 停掉再重新运行 `dsh web`）
+2. 刷新浏览器页面
+3. 打开 **设置 → 通用设置**，找到"通知"配置行
+
+`dsh plugin add` 会自动把插件写入 profile 的依赖并在重启后挂载，无需手动编辑任何配置文件。
+
+## ⚙️ 使用
+
+打开 **设置 → 通用设置**，在"通知"一行中：
+
+1. 打开**启用提醒**总开关
+2. 按需勾选提醒时机：**回答完成** / **需要授权**
+3. 选择**声音类型**并配置：
+   - 内置铃声：无需配置
+   - 文字转语音：填写要朗读的文字
+   - 自定义音频：上传本地文件（≤1MB），或填一个 http(s) 音频链接
+4. 可选：打开**系统通知**开关（浏览器会请求通知权限）
+5. 点击**试听**按钮可立即播放当前配置的声音（不受总开关影响）
+
+## 🗑️ 卸载
+
+```bash
+dsh plugin --profile web remove @deepseek-ai/dsh-client-ui-notify
+```
+
+然后重启 dsh web 即可。该命令会同时移除 profile 依赖与插件挂载配置。
+
+> 如果想清理上传过的自定义音频文件，删除目录 `~/.dsh/storages/ui-notify/` 即可。
+
+## ❓ 常见问题
+
+**Q: 设置里看不到"通知"这一行？**
+确认插件已安装（`dsh plugin --profile web list`）、dsh web 已重启、浏览器页面已刷新。插件版本需要与 dsh 核心版本匹配（当前适配 `0.1.2-alpha.4`）。
+
+**Q: 事件发生时没有声音？**
+浏览器的自动播放策略要求页面先有过用户交互（点击一下页面即可）才会出声。刚打开页面就触发的提醒可能被浏览器静默拦截。
+
+**Q: 系统通知开关不生效？**
+需要浏览器授权通知权限。如果权限被拒绝或浏览器不支持，该开关会静默失效（不影响铃声）。
+
+**Q: 启动时报 "does not provide an export named ..." 错误？**
+插件版本与 dsh 核心版本不匹配。请将两者更新到互相匹配的版本（本插件当前适配 dsh `0.1.2-alpha.4`）。
+
+## ⚠️ 已知限制
+
+- 弹窗只保留最新一条告警——连续触发时每次都响铃，但弹窗只显示最新事件
+- 自定义音频单文件上限 1 MB，仅支持常见音频格式（wav/mp3/ogg/mp4/webm/aac/flac/m4a 等）；更大的文件请改用音频链接
+- 两种事件共用同一种铃声，弹窗以颜色区分事件类型
+
 ---
-description: "Sound-alert plugin for the dsh web client: rings and shows a bottom-right popup on answer-complete and authorization-needed edges; built-in ringtone, text-to-speech, or a custom audio file, configured from a General settings row."
-kind: "package-reference"
----
 
-# @deepseek-ai/dsh-client-ui-notify
-
-English | [中文](README.zh.md)
-
-## Summary
-
-`dsh-client-ui-notify` is the browser notification plugin for the dsh web client: it observes the session list and pending-interaction map, plays a sound when a session's answer completes or a session needs authorization, shows a transient bottom-right popup for every ring, and can send a browser system notification. The playback method is user-configurable from a General settings row — a bundled two-tone ringtone, text-to-speech over the configured text, or a custom audio file uploaded through a trust-fenced Host route (the durable setting stores the served URL, never the file bytes). The Host half registers the durable `ui-notify` settings namespace, serves the user-audio route, and sweeps orphaned audio on activation.
-
-## Table of Contents
-
-- [Use this package](#use-this-package)
-- [Understand the implementation](#understand-the-implementation)
-- [Further Exploration](#further-exploration)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
-
-<a id="use-this-package"></a>
-## Use this package
-
-The web shell composes this plugin like any other `dsh.client` row; it renders nothing until the user opens the General settings section, where the notification row appears. The row owns the master switch, the system-notification channel (requesting browser permission on first enable), the two event toggles, the sound-type selector, and the method inputs — every control writes one durable field through the runtime, so the settings transport stays behind one owner.
-
-### Enabling the alert
-
-Turn on the master switch to arm the ringtone; the two event toggles pick which edges ring (answer complete, authorization needed, or both), and the system-notification switch adds a browser Notification per ring. The preview button plays the currently configured method immediately, independent of the master switch.
-
-### Choosing a sound
-
-The built-in ringtone needs no setup. Text-to-speech speaks the configured text through the platform synthesizer. The custom method accepts an http(s) URL or a local audio file up to 1 MB; a picked file uploads to the Host route and the setting stores the served URL, so file bytes never bloat the settings document. Replacing the file deletes the previous one.
-
-### Observable success and failures
-
-A fired edge plays the sound and emits `notify/alert`; with the system toggle on it also emits `notify/system`. The popup follows the master switch and the event toggles, with no separate toggle. A misconfigured method, an empty TTS text, a missing custom URL, an unpermitted Notification, or a platform without audio support degrades to a no-op instead of throwing from an event handler.
-
------
-
-<a id="understand-the-implementation"></a>
-## Understand the implementation
+## 🔧 开发者备注
 
 <details>
-<summary>Implementation internals — click to expand</summary>
+<summary>构建、版本对齐与实现要点（点击展开）</summary>
 
-The package realizes one ownership rule: the runtime owns the durable section and every playback decision, the settings row mirrors the same config, and the Host owns the only byte store in the seam.
+### 构建
 
-### Edge detection
+插件使用 [tsdown](https://tsdown.dev/) 构建，构建配置引用 monorepo 根的共享文件 `../tsdown.client.ts`，需在 deepseek-harness monorepo 内执行：
 
-`NotifyRuntime` adopts the settings scope and diffs the session list plus the pending-interaction map against a per-session mirror. Running → idle fires "answer complete"; a pending interaction appearing fires "authorization needed". The first snapshot only records (sessions already idle at load ring nothing), and `connection/reset` re-baselines so reconnect status replays cannot fabricate edges. Each fired edge plays the configured sound and emits the `notify/alert` and optional `notify/system` events on the owning context.
+```bash
+pnpm run bundle   # tsdown，产物输出到 lib/
+```
 
-### User-audio store
+产物：`lib/index.js`（Host 半）+ `lib/client.js`（浏览器半）+ `lib/types/`（类型声明）。
 
-The custom-method file lands in `$DSH_HOME/storages/ui-notify/audio` through a webServer prefix route (`/_dsh-ui-notify/audio/<uuid>.<ext>`) guarded by the same loopback trust fence as the `/api` privileged methods. The URL tail is pinned to a canonical UUID plus a whitelisted extension before any file is touched; uploads are bounded at 1 MB and the response carries an immutable cache header because the id names the content. A retention sweep at Host activation removes files the setting no longer references, touching only files matching the canonical id pattern.
+### 版本对齐
 
-### Settings row and popup
+本插件的版本号与 dsh 核心版本保持一致。升级 dsh 核心后需核对以下 API 面（`0.1.1-rc.2` → `0.1.2-alpha.4` 期间的两处破坏性变更）：
 
-The row registers into the General section's item slot with a store mirroring the runtime config, gated by the runtime's monotonic revision so stale duplicates never render. The popup registers into the shell's floating overlay seat; the newest alert wins (replaces the current toast), holds, fades, then dismisses itself or on user close. The card renders through a body portal and stays click-through so an announcement never blocks the app underneath.
+- `dsh-client-connection` 不再导出裸函数 `isTrustedApiRequest` —— 信任围栏改由 `connection` 服务的 `requestRejection(req)` 方法承担（Host/Origin 校验 + 浏览器认证，见 `src/index.ts` 的路由注册）
+- `dsh-settings` 不再导出 `settingsNamespace()` 包装 —— `settings.register()` 直接收命名空间字符串
+
+### 实现要点
+
+- **所有权规则**：运行时（`NotifyRuntime`）拥有持久化配置与全部播放决策；设置行只是同一份配置的镜像，由单调 revision 把关；Host 拥有唯一的文件字节存储
+- **边沿检测**：对会话列表 + pending 交互映射做逐会话 diff。running → idle 触发"回答完成"；出现 pending 交互触发"需要授权"。首个快照只记录不响铃；`connection/reset` 时重新基线，避免重连状态重放伪造边沿
+- **用户音频存储**：文件经 webServer 前缀路由（`/_dsh-ui-notify/audio/<uuid>.<ext>`）落入 `$DSH_HOME/storages/ui-notify/audio`，围栏与 `/api` 一致；URL 尾部钉死为规范 UUID + 白名单扩展名；上传上限 1 MB；Host 激活时清扫设置不再引用的孤儿文件（只动符合规范 id 模式的文件）
+- **弹窗计时**：`NotifyToast.tsx` 的 `HOLD_MS`/`FADE_MS` 与 `NotifyToast.module.css` 中 `dsh-notify-toast-fade` 动画的延迟/时长必须一致，否则会截断淡出或留下不可见卡片
 
 </details>
 
------
+## License
 
-<a id="further-exploration"></a>
-## Further Exploration
-
-These pages cover the surfaces this plugin composes into.
-
-- [ui-settings](../ui-settings/README.md) — the settings-namespace scope service the row's transport rides.
-- [ui-settings-general](../ui-settings-general/README.md) — the settings shell hosting the General section.
-- [ui-session](../ui-session/README.md) — the pending-interaction root the runtime observes.
-- [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
-
------
-
-<a id="model-experience"></a>
-## Model Experience
-
-None, as the package is a browser-side notification UI; it registers nothing model-facing.
-
-#### KV Cache effect
-
-None; the plugin assembles no provider request and adds no session event of its own.
-
-## Known Limitations and Deferred Work
-
-<a id="known-limitations-and-deferred-work"></a>
-
-These limits define where the notification seam cannot reach; they are current package constraints.
-
-- **The popup keeps only the newest alert** — a burst of fired edges rings for each but collapses to the latest toast; there is no notification queue.
-- **System notifications require the browser grant** — the row requests permission on first enable; without the grant or platform support the channel silently no-ops.
-- **Custom audio is capped at 1 MB** per file and accepts only whitelisted audio extensions; larger or exotic files must use an http(s) URL instead.
-- **The ringtone is fixed** — one bundled two-tone chime for both edges; the popup distinguishes kinds by accent color, not sound.
-
-<a id="dev-note"></a>
-### Dev Note
-
-<details>
-<summary>Working context for maintainers — click to expand</summary>
-
-The popup's hold and fade timings live in two places that must agree: `HOLD_MS`/`FADE_MS` in `NotifyToast.tsx` and the `dsh-notify-toast-fade` animation delay/duration in `NotifyToast.module.css` — a mismatch cuts the fade or leaves an invisible card behind. The user-audio route trusts the same `isTrustedApiRequest` pin as `/api`; keep it loopback-only.
-
-</details>
+[MIT](LICENSE)

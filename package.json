@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-notify",
   "description": "Sound-alert plugin with a bottom-right popup: rings and shows a card on answer-complete and authorization-needed edges; built-in ringtone, text-to-speech, or a custom audio file, configurable from a General settings row",
-  "version": "0.1.2-alpha.1",
+  "version": "0.1.2-alpha.4",
   "publishConfig": {
     "access": "public"
   },

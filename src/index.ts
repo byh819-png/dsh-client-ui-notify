@@ -7,9 +7,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 // Activates the webServer Context merge used by the route registration below.
 import type {} from '@deepseek-ai/dsh-host-webserver'
+// dsh 0.1.2-alpha: settings.register() takes the namespace string directly
+// (the old settingsNamespace() wrapper is gone from dsh-settings).
 import { AUDIO_URL_PREFIX, NOTIFY_SETTINGS_NAMESPACE, NotifySettingsSchema } from './notify-settings.ts'
 import { handleAudioRequest, sweepOrphanedAudio } from './audio-store.ts'
 
@@ -21,7 +22,7 @@ export {
 } from './notify-settings.ts'
 export { audioStorageDir, handleAudioRequest, sweepOrphanedAudio } from './audio-store.ts'
 
-const NOTIFY_NAMESPACE = settingsNamespace(NOTIFY_SETTINGS_NAMESPACE)
+const NOTIFY_NAMESPACE = NOTIFY_SETTINGS_NAMESPACE
 
 /**
  * Register the durable notification section when the settings provider is
@@ -41,11 +42,23 @@ export function apply(ctx: Context): void {
       settingsCtx.logger.warn('client-ui-notify: audio retention sweep failed', error)
     })
   })
-  ctx.inject(['webServer'], (httpCtx) => {
+  // Fenced like the core /api prefix: dsh 0.1.2-alpha no longer exports the
+  // raw `isTrustedApiRequest` helper — the fence now lives on the `connection`
+  // service as `requestRejection()` (Host/Origin trust + browser auth). The
+  // wrapper keeps `handleAudioRequest` free of connection-service coupling.
+  ctx.inject(['connection', 'webServer'], (httpCtx) => {
     httpCtx.effect(() => httpCtx.webServer.register({
       kind: 'prefix',
       path: AUDIO_URL_PREFIX,
-      handler: handleAudioRequest,
+      handler: async (req, res) => {
+        const rejection = httpCtx.connection.requestRejection(req)
+        if (rejection !== undefined) {
+          res.writeHead(rejection)
+          res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
+        await handleAudioRequest(req, res)
+      },
     }), 'client-ui-notify: user-audio route')
   })
 }

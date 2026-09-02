@@ -23,19 +23,19 @@ DeepSeek Harness（dsh）网页端的**铃声提醒插件**：当 AI 回答完�
 
 已安装 [dsh](https://www.npmjs.com/package/@deepseek-ai/dsh)（`dsh --version` 能正常输出版本号），并至少运行过一次 `dsh web`。
 
-### 方式一：从 Git 仓库安装
+### 方式一：dsh 安装用户（npm）
 
 ```bash
 dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify
 ```
 
-### 方式二：从 Git 仓库安装（完整 URL 形式）
+### 方式二：deepseek-harness 仓库安装用户
 
 ```bash
-dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
+pnpm dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
 ```
 
-两种写法等价，均要求仓库中包含构建产物（`lib/` 目录），否则需要先在本地构建。
+两种方式均要求仓库中包含构建产物（`lib/` 目录），否则需要先在本地构建。
 
 ### 安装后
 

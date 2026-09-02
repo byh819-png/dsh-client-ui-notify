@@ -23,19 +23,19 @@ English | [中文](README.md)
 
 [DeepSeek Harness (dsh)](https://www.npmjs.com/package/@deepseek-ai/dsh) is installed (`dsh --version` prints a version) and `dsh web` has run at least once.
 
-### Option 1: Install from a Git repository
+### Option 1: dsh users (npm install)
 
 ```bash
 dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify
 ```
 
-### Option 2: Install from a Git repository (full URL form)
+### Option 2: deepseek-harness monorepo users
 
 ```bash
-dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
+pnpm dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
 ```
 
-Both forms are equivalent and require the repository to contain the build output (`lib/` directory), otherwise build locally first.
+Both options require the repository to contain the build output (`lib/` directory), otherwise build locally first.
 
 ### After installation
 

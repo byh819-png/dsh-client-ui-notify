@@ -35,7 +35,7 @@ dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify
 pnpm dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
 ```
 
-Both options require the repository to contain the build output (`lib/` directory), otherwise build locally first.
+Both options require the repository to contain the build output (`lib/` directory).
 
 ### After installation
 

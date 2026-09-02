@@ -35,7 +35,7 @@ dsh plugin --profile web add github:byh819-png/dsh-client-ui-notify
 pnpm dsh plugin --profile web add git+https://github.com/byh819-png/dsh-client-ui-notify.git
 ```
 
-两种方式均要求仓库中包含构建产物（`lib/` 目录），否则需要先在本地构建。
+两种方式均要求仓库中包含构建产物（`lib/` 目录）。
 
 ### 安装后
 

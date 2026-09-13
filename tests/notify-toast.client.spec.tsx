@@ -44,12 +44,19 @@ function emptyWorkspaces() {
 type AttentionSnapshot = Parameters<Parameters<NotifyToastComponentProps['useSessionPendingInteraction']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: NotifyToastComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+// The popup reads neither the panel nor the unified resource hook.
+const usePanelInfo: NotifyToastComponentProps['usePanelInfo'] = selector => selector({ activePanelId: null })
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as NotifyToastComponentProps['useResource']
 
 function mount() {
   const store = createNotifyToastStore().create()
   const props: NotifyToastComponentProps = {
     useSessions: emptySessions(),
     useSessionPendingInteraction,
+    usePanelInfo,
+    useResource,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,

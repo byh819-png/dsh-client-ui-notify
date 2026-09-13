@@ -17,6 +17,7 @@ export declare const zh: {
     'notify.ttsText': string;
     'notify.ttsTextHint': string;
     'notify.customAudioUrl': string;
+    'notify.customAudioUrlPlaceholder': string;
     'notify.customHint': string;
     'notify.pickFile': string;
     'notify.preview': string;
@@ -48,6 +49,7 @@ export declare const en: {
     'notify.ttsText': string;
     'notify.ttsTextHint': string;
     'notify.customAudioUrl': string;
+    'notify.customAudioUrlPlaceholder': string;
     'notify.customHint': string;
     'notify.pickFile': string;
     'notify.preview': string;

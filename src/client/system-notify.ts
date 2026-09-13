@@ -11,10 +11,19 @@ export const SYSTEM_NOTIFICATION_TAG = 'dsh-ui-notify'
 /**
  * Show one system notification. A no-op when the platform capability is
  * absent (jsdom tests, unsupported browsers) or permission was not granted.
+ * Clicking the notification focuses the harness tab and dismisses the
+ * notification before running the caller's action, so the action's own
+ * navigation is visible on the tab the user just asked for.
  * @param title - short localized alert copy (the notification's title line).
  * @param body - detail line, the session label.
+ * @param open - the action a click runs (the caller opens the alerted session).
  */
-export function showSystemNotification(title: string, body: string): void {
+export function showSystemNotification(title: string, body: string, open: () => void): void {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  new Notification(title, { body, tag: SYSTEM_NOTIFICATION_TAG })
+  const notification = new Notification(title, { body, tag: SYSTEM_NOTIFICATION_TAG })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+    open()
+  }
 }

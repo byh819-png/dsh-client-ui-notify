@@ -1,13 +1,13 @@
-/** Host-side user-audio route: trust fence, id/extension parsing, GET/PUT/DELETE
- * against `$DSH_HOME/storages`, size/type guards, route registration, and the
- * orphaned-file retention sweep. */
+/** Host-side user-audio route: the connection-service trust fence at the route
+ * registration, id/extension parsing, GET/PUT/DELETE against
+ * `$DSH_HOME/storages`, size/type guards, and the orphaned-file retention sweep. */
 import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   apply, audioExtensionOfMediaType, audioMediaTypeOfExtension, audioStorageDir,
   AUDIO_URL_PREFIX, DEFAULT_NOTIFY_SETTINGS, handleAudioRequest, NOTIFY_SETTINGS_NAMESPACE,
@@ -89,6 +89,28 @@ function withTempHome(): void {
   process.env.DSH_HOME = tempHome
 }
 
+/**
+ * Apply the plugin over service doubles.
+ * @param rejection - status the connection double reports, or undefined to accept.
+ * @returns the applied context, its fiber, and the route the plugin registered.
+ */
+async function applyRoute(rejection: 401 | 403 | undefined) {
+  const ctx = new Context()
+  const registered: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }[] = []
+  ctx.provide('webServer', {
+    register: (route: { handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) => {
+      registered.push(route)
+      return () => {}
+    },
+  } as never)
+  const requestRejection = vi.fn(() => rejection)
+  ctx.provide('connection', { requestRejection } as never)
+  await ctx.plugin(MemorySettings).await()
+  const fiber = ctx.plugin({ apply })
+  await fiber.await()
+  return { ctx, fiber, registered, route: registered[0]!, requestRejection }
+}
+
 describe('audio media type mapping', () => {
   it('resolves declared media types to extensions and back', () => {
     expect(audioExtensionOfMediaType('audio/wav')).toBe('wav')
@@ -128,13 +150,6 @@ describe('audio route', () => {
     expect(gets[0]?.headers['cache-control']).toContain('immutable')
     expect(gets[0]?.body).toBe('RIFF')
     expect(readFileSync(join(audioStorageDir(), `${UUID}.wav`), 'utf8')).toBe('RIFF')
-  })
-
-  it('rejects requests whose Host is not loopback', async () => {
-    withTempHome()
-    const { res, captured } = capture()
-    await handleAudioRequest(request({ headers: { host: 'attacker.example' } }), res)
-    expect(captured[0]).toMatchObject({ status: 403 })
   })
 
   it('rejects paths outside the route prefix and malformed tails', async () => {
@@ -232,22 +247,35 @@ describe('audio route', () => {
   })
 
   it('registers the prefix route and the settings namespace on apply', async () => {
-    const ctx = new Context()
-    const registered: unknown[] = []
-    ctx.provide('webServer', {
-      register: (route: unknown) => {
-        registered.push(route)
-        return () => {}
-      },
-    } as never)
-    await ctx.plugin(MemorySettings).await()
-    const fiber = ctx.plugin({ apply })
-    await fiber.await()
+    const { ctx, fiber, registered } = await applyRoute(undefined)
     expect(registered).toHaveLength(1)
     expect(registered[0]).toMatchObject({ kind: 'prefix', path: AUDIO_URL_PREFIX })
-    expect(ctx.settings.get(settingsNamespace(NOTIFY_SETTINGS_NAMESPACE))).toEqual(DEFAULT_NOTIFY_SETTINGS)
+    expect(ctx.settings.get(NOTIFY_SETTINGS_NAMESPACE)).toEqual(DEFAULT_NOTIFY_SETTINGS)
     await fiber.dispose()
     expect(registered).toHaveLength(1)
+  })
+
+  it('fences the route with the connection service rejection status', async () => {
+    for (const [rejection, body] of [[403, 'forbidden'], [401, 'unauthorized']] as const) {
+      const { fiber, route, requestRejection } = await applyRoute(rejection)
+      const { res, captured } = capture()
+      await route.handler(request({ headers: { host: 'attacker.example' } }), res)
+      expect(requestRejection).toHaveBeenCalledTimes(1)
+      expect(captured[0]).toMatchObject({ status: rejection, body })
+      await fiber.dispose()
+    }
+  })
+
+  it('serves the stored audio once the connection service accepts the request', async () => {
+    withTempHome()
+    mkdirSync(audioStorageDir(), { recursive: true })
+    writeFileSync(join(audioStorageDir(), `${UUID}.wav`), 'RIFF')
+    const { fiber, route, requestRejection } = await applyRoute(undefined)
+    const { res, captured } = capture()
+    await route.handler(request(), res)
+    expect(requestRejection).toHaveBeenCalledTimes(1)
+    expect(captured[0]).toMatchObject({ status: 200, body: 'RIFF' })
+    await fiber.dispose()
   })
 })
 

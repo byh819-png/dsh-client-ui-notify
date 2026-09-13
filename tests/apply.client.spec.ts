@@ -59,18 +59,22 @@ async function bench(isLoopback = true) {
   // The settings transport rides the remote.settings namespace (the domain
   // base's inject); the same double carries the forwarded-event port.
   const events = new TestRemote(ctx, { settings: { describe, mutate } })
+  // Host persistence follows the mirrored Host facts, not the connection
+  // service: a non-loopback page stays process-local.
+  events.$host.isLoopback = isLoopback
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   const sessionsList = createSnapshotStore<SessionListState>({
     ids: [], byId: {}, current: undefined, phase: 'ready',
     subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
   })
-  ctx.provide('sessions', { list: sessionsList } as never)
+  const sessionsOpen = vi.fn()
+  ctx.provide('sessions', { list: sessionsList, open: sessionsOpen } as never)
   // The pending-interaction root the runtime observes for the
   // authorization-needed edge (a uiSession service map, not a SessionSummary field).
   const pending = createSnapshotStore<ReadonlyMap<SessionId, { key: string; kind: string; sessionId: SessionId }>>(new Map())
   ctx.provide('uiSession', { pendingInteractions: pending } as never)
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, locale, describe, mutate, events, sessionsList, pending,
+    ctx, slots: ctx.get('slots') as SlotRegistry, locale, describe, mutate, events, sessionsList, sessionsOpen, pending,
     setHostSection: (next: typeof section) => { section = next },
   }
 }
@@ -214,7 +218,7 @@ describe('ui-notify apply', () => {
     })
   })
 
-  it('sends a browser system notification on edges when the system toggle is on', async () => {
+  it('sends a browser system notification on edges, and a click opens the alerted session', async () => {
     const b = await bench()
     b.setHostSection({ ...DEFAULT_NOTIFY_SETTINGS, enabled: true, systemNotify: true })
     declareItems(b.slots)
@@ -222,13 +226,24 @@ describe('ui-notify apply', () => {
     const row = faceOf(b.slots)
     b.events.emit('settings/document-updated', [NOTIFY_SETTINGS_NAMESPACE, 0])
     await vi.waitFor(() => { expect(row.instance.getSnapshot().config.systemNotify).toBe(true) })
-    const NotificationMock = vi.fn() as ReturnType<typeof vi.fn> & { permission: NotificationPermission }
+    const instances: { onclick?: () => void; close: ReturnType<typeof vi.fn> }[] = []
+    // A function expression, not an arrow: the sender constructs the double
+    // with `new`, and an arrow implementation is not constructible.
+    const NotificationMock = vi.fn(function () {
+      const instance: { onclick?: () => void; close: ReturnType<typeof vi.fn> } = { close: vi.fn() }
+      instances.push(instance)
+      return instance
+    }) as ReturnType<typeof vi.fn> & { permission: NotificationPermission }
     NotificationMock.permission = 'granted'
     vi.stubGlobal('Notification', NotificationMock)
+    // jsdom does not implement window.focus, and the click path calls it.
+    vi.stubGlobal('focus', vi.fn())
     try {
       b.sessionsList.set(listState([summary({ running: true })]))
       b.sessionsList.set(listState([summary({ running: false, updatedAt: 2 })]))
       expect(NotificationMock).toHaveBeenCalledWith('回答已完成', { body: 'sess-1', tag: SYSTEM_NOTIFICATION_TAG })
+      instances[0]!.onclick!()
+      expect(b.sessionsOpen).toHaveBeenCalledWith('sess-1')
     } finally {
       vi.unstubAllGlobals()
     }

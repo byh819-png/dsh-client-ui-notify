@@ -159,11 +159,13 @@ export function apply(ctx: ClientContext): void {
   }, NotifyToast))
 
   // Browser system notification channel: the sender no-ops unless the
-  // platform exposes Notification with granted permission.
+  // platform exposes Notification with granted permission. A click brings the
+  // harness tab forward and makes the alerted session current, so the
+  // authorization prompt the alert announced is on screen.
   ctx.on('notify/system', (alert) => {
     const title = alert.kind === 'answer-complete'
       ? systemCopy('notify.system.answerComplete')
       : systemCopy('notify.system.authRequired')
-    showSystemNotification(title, alert.title)
+    showSystemNotification(title, alert.title, () => { ctx.sessions.open(alert.sessionId) })
   })
 }

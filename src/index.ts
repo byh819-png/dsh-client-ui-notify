@@ -7,10 +7,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Activates the webServer Context merge used by the route registration below.
+// Activates the settings, webServer, and connection Context merges used below.
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-// dsh 0.1.2-alpha: settings.register() takes the namespace string directly
-// (the old settingsNamespace() wrapper is gone from dsh-settings).
+import type {} from '@deepseek-ai/dsh-client-connection'
 import { AUDIO_URL_PREFIX, NOTIFY_SETTINGS_NAMESPACE, NotifySettingsSchema } from './notify-settings.ts'
 import { handleAudioRequest, sweepOrphanedAudio } from './audio-store.ts'
 
@@ -22,8 +22,6 @@ export {
 } from './notify-settings.ts'
 export { audioStorageDir, handleAudioRequest, sweepOrphanedAudio } from './audio-store.ts'
 
-const NOTIFY_NAMESPACE = NOTIFY_SETTINGS_NAMESPACE
-
 /**
  * Register the durable notification section when the settings provider is
  * composed (the browser row's scope reads and writes through this namespace),
@@ -33,7 +31,7 @@ const NOTIFY_NAMESPACE = NOTIFY_SETTINGS_NAMESPACE
  */
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
-    const scope = settingsCtx.settings.register(NOTIFY_NAMESPACE, NotifySettingsSchema)
+    const scope = settingsCtx.settings.register(NOTIFY_SETTINGS_NAMESPACE, NotifySettingsSchema)
     // Retention sweep: the setting's customAudioUrl is the only reference into
     // the audio store; hand-edited settings, uploads whose settings write
     // never landed, and failed eager cleanups all leave orphans behind. Runs
@@ -42,15 +40,14 @@ export function apply(ctx: Context): void {
       settingsCtx.logger.warn('client-ui-notify: audio retention sweep failed', error)
     })
   })
-  // Fenced like the core /api prefix: dsh 0.1.2-alpha no longer exports the
-  // raw `isTrustedApiRequest` helper — the fence now lives on the `connection`
-  // service as `requestRejection()` (Host/Origin trust + browser auth). The
-  // wrapper keeps `handleAudioRequest` free of connection-service coupling.
-  ctx.inject(['connection', 'webServer'], (httpCtx) => {
+  ctx.inject(['webServer', 'connection'], (httpCtx) => {
     httpCtx.effect(() => httpCtx.webServer.register({
       kind: 'prefix',
       path: AUDIO_URL_PREFIX,
       handler: async (req, res) => {
+        // The connection service owns the browser-trust decision for every
+        // Host route, `/api` included. The audio bytes clear the same check
+        // before any file is touched.
         const rejection = httpCtx.connection.requestRejection(req)
         if (rejection !== undefined) {
           res.writeHead(rejection)

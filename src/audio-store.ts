@@ -2,12 +2,10 @@
  * Host-side user-audio store for the notification plugin: the custom-method
  * local file lands here instead of bloating the settings document with a data
  * URL. One file per id under `$DSH_HOME/storages/ui-notify/audio`, served,
- * uploaded, and deleted through a webServer prefix route. The route is fenced
- * by the caller (src/index.ts) with the core `connection` service's
- * `requestRejection()` — the same Host/Origin + browser-auth fence the /api
- * prefix uses — because dsh 0.1.2-alpha stopped exporting the raw
- * `isTrustedApiRequest` helper. A retention sweep at host activation removes
- * files no longer referenced by the setting.
+ * uploaded, and deleted through a webServer prefix route whose registrant
+ * applies the shared trust fence before calling {@link handleAudioRequest}. A
+ * retention sweep at host activation removes files no longer referenced by the
+ * setting.
  */
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -185,11 +183,9 @@ export async function sweepOrphanedAudio(referencedUrl: string | undefined): Pro
 }
 
 /**
- * The route handler: id+extension parsing first, then the method dispatch.
- * Trust fencing happens in the route registration (src/index.ts) via the core
- * `connection.requestRejection()` — by the time a request reaches here it has
- * already passed the Host/Origin and browser-auth fence. Any parse failure is
- * a plain 404 — no user content reaches the filesystem without a valid id.
+ * The route handler: id+extension parsing, then the method dispatch. An
+ * unparsable tail is a plain 404 — no user content reaches the filesystem
+ * without a valid id. The registering route applies the trust fence first.
  * @param req - the incoming request.
  * @param res - the response to write.
  */

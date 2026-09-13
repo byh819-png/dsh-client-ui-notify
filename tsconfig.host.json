@@ -9,7 +9,6 @@
   "files": [
     "src/index.ts",
     "src/audio-store.ts",
-    "src/invariant.ts",
     "src/notify-settings.ts"
   ],
   "references": [
@@ -21,9 +20,6 @@
     },
     {
       "path": "../../settings/settings"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/home-paths"

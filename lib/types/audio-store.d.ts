@@ -18,9 +18,9 @@ export declare function audioStorageDir(): string;
  */
 export declare function sweepOrphanedAudio(referencedUrl: string | undefined): Promise<number>;
 /**
- * The route handler: trust fence first, then id+extension parsing, then the
- * method dispatch. Any parse or trust failure is a plain 403/404 — no user
- * content reaches the filesystem without a valid id.
+ * The route handler: id+extension parsing, then the method dispatch. An
+ * unparsable tail is a plain 404 — no user content reaches the filesystem
+ * without a valid id. The registering route applies the trust fence first.
  * @param req - the incoming request.
  * @param res - the response to write.
  */

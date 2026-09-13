@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   apply, DEFAULT_NOTIFY_SETTINGS, isNotifyMethod, NOTIFY_SETTINGS_NAMESPACE,
 } from '@deepseek-ai/dsh-client-ui-notify'
@@ -19,7 +19,7 @@ describe('ui-notify host', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
-    const ns = settingsNamespace(NOTIFY_SETTINGS_NAMESPACE)
+    const ns = NOTIFY_SETTINGS_NAMESPACE
     // The schema resolves every default on registration.
     expect(ctx.settings.get(ns)).toEqual(DEFAULT_NOTIFY_SETTINGS)
     await ctx.settings.update(ns, { enabled: true, method: 'tts' })

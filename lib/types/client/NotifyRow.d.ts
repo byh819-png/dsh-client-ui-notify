@@ -1,8 +1,6 @@
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots';
 import { type NotifySettings } from '../notify-settings.ts';
 import type { createNotifyRowStore } from './settings-store.ts';
-/** Backwards-compatible alias for the shared audio size cap. */
-export { MAX_AUDIO_BYTES as MAX_CUSTOM_AUDIO_BYTES } from '../notify-settings.ts';
 /** Injected business face: the one-field write and the immediate preview. */
 export interface NotifyRowInjected {
     /** Persist one notification setting field. */

@@ -59,6 +59,11 @@ function emptyWorkspaces() {
 type AttentionSnapshot = Parameters<Parameters<NotifyRowComponentProps['useSessionPendingInteraction']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: NotifyRowComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+// The row reads neither the panel nor the unified resource hook.
+const usePanelInfo: NotifyRowComponentProps['usePanelInfo'] = selector => selector({ activePanelId: null })
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as NotifyRowComponentProps['useResource']
 
 /** A Notification constructor mock carrying the permission surface the row reads. */
 function notificationMock(permission: NotificationPermission) {
@@ -79,6 +84,8 @@ function mount(config: Partial<NotifySettings> = {}) {
   const props: NotifyRowComponentProps = {
     useSessions: emptySessions(),
     useSessionPendingInteraction,
+    usePanelInfo,
+    useResource,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,

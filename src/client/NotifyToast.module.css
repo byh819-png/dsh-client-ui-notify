@@ -8,7 +8,9 @@
 .toast {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  /* Pinned close to the bottom edge: the composer's authorization action row
+     ends just above this, so a larger offset covered its buttons. */
+  bottom: 4px;
   /* Above the image lightbox backdrop (1000) and the shell overlay layer (20):
      the popup must stay readable over any surface. */
   z-index: 1200;
@@ -19,7 +21,6 @@
   max-width: min(380px, calc(100vw - 32px));
   box-sizing: border-box;
   padding: 10px 12px 10px 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);

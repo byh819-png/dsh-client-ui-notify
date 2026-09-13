@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import {
   AUDIO_URL_PREFIX, MAX_AUDIO_BYTES, NOTIFY_FIELDS, audioExtensionOfMediaType,
   type NotifyMethod, type NotifySettings,
@@ -127,7 +128,7 @@ export function NotifyRow({ t, useStore, setField, preview }: NotifyRowComponent
       return
     }
     try {
-      const id = crypto.randomUUID()
+      const id = randomUUID()
       const url = `${AUDIO_URL_PREFIX}/${id}.${extension}`
       const response = await fetch(url, {
         method: 'PUT',

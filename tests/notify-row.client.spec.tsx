@@ -14,6 +14,19 @@ import { createNotifyRowStore } from '../src/client/settings-store.ts'
 
 afterEach(cleanup)
 
+/** Deterministic id minting: the row mints ids through dsh-util-crypto, whose
+ * entropy source is crypto.getRandomValues. */
+function stubUuid(uuid: string): void {
+  const hex = uuid.replaceAll('-', '')
+  const bytes = Uint8Array.from({ length: 16 }, (_value, index) => Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16))
+  vi.stubGlobal('crypto', {
+    getRandomValues: (target: Uint8Array): Uint8Array => {
+      target.set(bytes)
+      return target
+    },
+  })
+}
+
 const COPY: Record<string, string> = {
   'notify.enabled': 'Enable alerts',
   'notify.systemNotify': 'System notification',
@@ -235,7 +248,7 @@ describe('NotifyRow', () => {
     const b = mount({ enabled: true, method: 'custom' })
     const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
     vi.stubGlobal('fetch', fetchMock)
-    vi.stubGlobal('crypto', { randomUUID: () => '01234567-89ab-4cde-8f01-23456789abcd' })
+    stubUuid('01234567-89ab-4cde-8f01-23456789abcd')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'ring.wav', { type: 'audio/wav' })
@@ -260,7 +273,7 @@ describe('NotifyRow', () => {
     mount({ enabled: true, method: 'custom', customAudioUrl: previous })
     const fetchMock = vi.fn(() => Promise.resolve({ ok: true }))
     vi.stubGlobal('fetch', fetchMock)
-    vi.stubGlobal('crypto', { randomUUID: () => '11111111-1111-4111-8111-111111111111' })
+    stubUuid('11111111-1111-4111-8111-111111111111')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'ring.wav', { type: 'audio/wav' })
@@ -294,7 +307,7 @@ describe('NotifyRow', () => {
     const b = mount({ enabled: true, method: 'custom' })
     const fetchMock = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve({ ok: true }))
     vi.stubGlobal('fetch', fetchMock)
-    vi.stubGlobal('crypto', { randomUUID: () => '66666666-6666-4666-8666-666666666666' })
+    stubUuid('66666666-6666-4666-8666-666666666666')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'song.mp3', { type: '' })
@@ -322,7 +335,7 @@ describe('NotifyRow', () => {
       const success = mount({ enabled: true, method: 'custom' })
       const okFetch = vi.fn(() => Promise.resolve({ ok: true }))
       vi.stubGlobal('fetch', okFetch)
-      vi.stubGlobal('crypto', { randomUUID: () => '77777777-7777-4777-8777-777777777777' })
+      stubUuid('77777777-7777-4777-8777-777777777777')
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       fireEvent.change(fileInput, { target: { files: [new File(['RIFF'], 'a.wav', { type: 'audio/wav' })] } })
       await act(async () => { await Promise.resolve() })
@@ -335,7 +348,7 @@ describe('NotifyRow', () => {
       const failed = mount({ enabled: true, method: 'custom' })
       const badFetch = vi.fn(() => Promise.resolve({ ok: false, status: 500 }))
       vi.stubGlobal('fetch', badFetch)
-      vi.stubGlobal('crypto', { randomUUID: () => '88888888-8888-4888-8888-888888888888' })
+      stubUuid('88888888-8888-4888-8888-888888888888')
       fireEvent.change(fileInput, { target: { files: [new File(['RIFF'], 'a.wav', { type: 'audio/wav' })] } })
       await act(async () => { await Promise.resolve() })
       await act(async () => { await Promise.resolve() })
@@ -352,7 +365,7 @@ describe('NotifyRow', () => {
   it('keeps the previous value when the upload fails', async () => {
     const b = mount({ enabled: true, method: 'custom' })
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))))
-    vi.stubGlobal('crypto', { randomUUID: () => '22222222-2222-4222-8222-222222222222' })
+    stubUuid('22222222-2222-4222-8222-222222222222')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'ring.wav', { type: 'audio/wav' })
@@ -368,7 +381,7 @@ describe('NotifyRow', () => {
     const b = mount({ enabled: true, method: 'custom' })
     const fetchMock = vi.fn(() => Promise.resolve({ ok: false, status: 415 }))
     vi.stubGlobal('fetch', fetchMock)
-    vi.stubGlobal('crypto', { randomUUID: () => '33333333-3333-4333-8333-333333333333' })
+    stubUuid('33333333-3333-4333-8333-333333333333')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'ring.wav', { type: 'audio/wav' })
@@ -388,7 +401,7 @@ describe('NotifyRow', () => {
       return Promise.resolve({ ok: true })
     })
     vi.stubGlobal('fetch', fetchMock)
-    vi.stubGlobal('crypto', { randomUUID: () => '55555555-5555-4555-8555-555555555555' })
+    stubUuid('55555555-5555-4555-8555-555555555555')
     try {
       const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!
       const file = new File(['RIFF'], 'ring.wav', { type: 'audio/wav' })
